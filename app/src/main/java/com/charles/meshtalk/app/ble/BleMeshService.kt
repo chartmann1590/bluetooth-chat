@@ -1,0 +1,517 @@
+package com.charles.meshtalk.app.ble
+
+import android.annotation.SuppressLint
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothGattServer
+import android.bluetooth.BluetoothGattServerCallback
+import android.bluetooth.BluetoothGattService
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.AdvertiseCallback
+import android.bluetooth.le.AdvertiseData
+import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Binder
+import android.os.Build
+import android.os.IBinder
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.charles.meshtalk.app.MainActivity
+import com.charles.meshtalk.app.crypto.Identity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.ArrayDeque
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Foreground service owning the whole BLE mesh: advertises + runs a GATT
+ * server (peripheral role), scans + connects to other peripherals (central
+ * role), and relays packets through [MeshEngine]. No pairing is involved:
+ * connections are transient GATT links used purely to exchange packets.
+ */
+class BleMeshService : Service() {
+
+    companion object {
+        private const val TAG = "BleMeshService"
+        val SERVICE_UUID: UUID = UUID.fromString("5f8a1000-3a10-4f61-9c1e-9a6b2f1e7c00")
+        val CHAR_UUID: UUID = UUID.fromString("5f8a1001-3a10-4f61-9c1e-9a6b2f1e7c00")
+        val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        private const val NOTIFICATION_CHANNEL_ID = "mesh_service"
+        private const val NOTIFICATION_ID = 1
+        private const val DEFAULT_CHUNK_PAYLOAD = 150
+    }
+
+    private val binder = LocalBinder()
+    inner class LocalBinder : Binder() {
+        fun getService(): BleMeshService = this@BleMeshService
+    }
+    override fun onBind(intent: Intent?): IBinder = binder
+
+    private val _events = MutableSharedFlow<MeshEvent>(extraBufferCapacity = 64)
+    val events: SharedFlow<MeshEvent> = _events.asSharedFlow()
+
+    private val _connectedPeerCount = MutableStateFlow(0)
+    val connectedPeerCount: StateFlow<Int> = _connectedPeerCount.asStateFlow()
+
+    private var identity: Identity? = null
+    private var meshEngine: MeshEngine? = null
+
+    private var gattServer: BluetoothGattServer? = null
+    private var characteristic: BluetoothGattCharacteristic? = null
+
+    private class LinkQueue {
+        val pending = ArrayDeque<ByteArray>()
+        var busy = false
+    }
+
+    // Each connection gets its own Reassembler: the same logical packet can arrive over
+    // multiple simultaneous links (BLE address rotation means one physical peer can show up
+    // as two separate connections), each fragmented independently per-link MTU. A shared
+    // reassembler would interleave chunks from different links' fragmentations and corrupt data.
+    private data class CentralLink(
+        val device: BluetoothDevice,
+        var mtu: Int = 23,
+        val queue: LinkQueue = LinkQueue(),
+        val reassembler: Reassembler = Reassembler()
+    )
+    private val centralLinks = ConcurrentHashMap<String, CentralLink>() // devices connected to our GATT server
+
+    private data class PeripheralLink(
+        val gatt: BluetoothGatt,
+        var mtu: Int = 23,
+        val queue: LinkQueue = LinkQueue(),
+        val reassembler: Reassembler = Reassembler()
+    )
+    private val peripheralLinks = ConcurrentHashMap<String, PeripheralLink>() // gatt clients we opened
+    private val connectingAddresses = ConcurrentHashMap.newKeySet<String>()
+
+    override fun onCreate() {
+        super.onCreate()
+        val manager = getSystemService(NotificationManager::class.java)
+        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, "Mesh networking", NotificationManager.IMPORTANCE_LOW)
+        manager.createNotificationChannel(channel)
+        val notification = buildNotification("Starting mesh…")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun buildNotification(text: String): Notification {
+        val openIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("MeshTalk")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentIntent(openIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun updateNotification(text: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    override fun onDestroy() {
+        stopMesh()
+        super.onDestroy()
+    }
+
+    /** Idempotent: call once identity/nickname and Bluetooth permissions are ready. */
+    @SuppressLint("MissingPermission")
+    fun startMesh(nickname: String) {
+        if (meshEngine != null) return
+        val id = Identity.loadOrCreate(applicationContext, nickname)
+        identity = id
+        meshEngine = MeshEngine(id)
+
+        val bluetoothManager = getSystemService(BluetoothManager::class.java)
+        val adapter = bluetoothManager.adapter
+        if (adapter == null || !adapter.isEnabled) {
+            Log.w(TAG, "Bluetooth adapter unavailable/disabled")
+            return
+        }
+
+        setupGattServer(bluetoothManager)
+        startAdvertising(adapter)
+        startScanning(adapter)
+        updateNotification("Online as ${id.nickname}")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopMesh() {
+        val bluetoothManager = getSystemService(BluetoothManager::class.java)
+        val adapter = bluetoothManager?.adapter
+        adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        peripheralLinks.values.forEach { it.gatt.close() }
+        peripheralLinks.clear()
+        gattServer?.close()
+        gattServer = null
+        centralLinks.clear()
+    }
+
+    // ---------------------------------------------------------------------
+    // GATT server (peripheral role)
+    // ---------------------------------------------------------------------
+
+    @SuppressLint("MissingPermission")
+    private fun setupGattServer(bluetoothManager: BluetoothManager) {
+        gattServer = bluetoothManager.openGattServer(this, gattServerCallback)
+        characteristic = BluetoothGattCharacteristic(
+            CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            BluetoothGattCharacteristic.PERMISSION_WRITE
+        ).apply {
+            addDescriptor(
+                BluetoothGattDescriptor(
+                    CCCD_UUID,
+                    BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+                )
+            )
+        }
+        val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        service.addCharacteristic(characteristic)
+        gattServer?.addService(service)
+    }
+
+    private val gattServerCallback = object : BluetoothGattServerCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                centralLinks[device.address] = CentralLink(device)
+                refreshPeerCount()
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                centralLinks.remove(device.address)
+                refreshPeerCount()
+            }
+        }
+
+        override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
+            centralLinks[device.address]?.mtu = mtu
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onCharacteristicWriteRequest(
+            device: BluetoothDevice,
+            requestId: Int,
+            characteristic: BluetoothGattCharacteristic,
+            preparedWrite: Boolean,
+            responseNeeded: Boolean,
+            offset: Int,
+            value: ByteArray
+        ) {
+            if (responseNeeded) {
+                gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null)
+            }
+            val link = centralLinks[device.address]
+            if (link == null) {
+                Log.w(TAG, "onCharacteristicWriteRequest: no centralLink for ${device.address}")
+                return
+            }
+            onChunkReceived(value, link.reassembler)
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onDescriptorWriteRequest(
+            device: BluetoothDevice,
+            requestId: Int,
+            descriptor: BluetoothGattDescriptor,
+            preparedWrite: Boolean,
+            responseNeeded: Boolean,
+            offset: Int,
+            value: ByteArray
+        ) {
+            if (responseNeeded) {
+                gattServer?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null)
+            }
+            if (descriptor.uuid == CCCD_UUID) {
+                val link = centralLinks[device.address]
+                if (link == null) {
+                    Log.w(TAG, "onDescriptorWriteRequest: no centralLink for ${device.address}")
+                    return
+                }
+                val toSend = meshEngine?.packetsForNewPeer() ?: emptyList()
+                Log.d(TAG, "onDescriptorWriteRequest: CCCD enabled by ${device.address}, sending ${toSend.size} packets")
+                toSend.forEach { enqueueToCentral(link, it) }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onNotificationSent(device: BluetoothDevice, status: Int) {
+            val link = centralLinks[device.address] ?: return
+            sendNextQueuedChunk(link)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enqueueToCentral(link: CentralLink, packetBytes: ByteArray) {
+        val chunkSize = (link.mtu - 3).takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
+        // messageId sits at a fixed offset in the wire format: version(1)+type(1)+ttl(1) then 16 bytes of id.
+        val packetId = packetBytes.copyOfRange(3, 19)
+        val chunks = Fragmenter.fragment(packetId, packetBytes, chunkSize)
+        synchronized(link.queue) {
+            link.queue.pending.addAll(chunks)
+            if (!link.queue.busy) sendNextQueuedChunk(link)
+        }
+    }
+
+    // The GATT server exposes a single shared BluetoothGattCharacteristic object across all
+    // connected centrals; setValue() + notifyCharacteristicChanged() must be atomic relative
+    // to other centrals' sends, or one send's value can be overwritten before its notify fires.
+    private val notifyLock = Any()
+
+    @SuppressLint("MissingPermission")
+    private fun sendNextQueuedChunk(link: CentralLink) {
+        val next: ByteArray = synchronized(link.queue) {
+            val polled = link.queue.pending.poll()
+            if (polled == null) {
+                link.queue.busy = false
+                return
+            }
+            link.queue.busy = true
+            polled
+        }
+        Log.d(TAG, "sendNextQueuedChunk: notifying ${link.device.address} with ${next.size} bytes")
+        val char = characteristic ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // API 33+: value is passed explicitly per-call, no shared mutable characteristic state.
+            val status = gattServer?.notifyCharacteristicChanged(link.device, char, false, next)
+            Log.d(TAG, "sendNextQueuedChunk: notifyCharacteristicChanged(value) status=$status")
+        } else {
+            synchronized(notifyLock) {
+                char.setValue(next)
+                val ok = gattServer?.notifyCharacteristicChanged(link.device, char, false)
+                Log.d(TAG, "sendNextQueuedChunk: notifyCharacteristicChanged returned $ok")
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Scanning + GATT client (central role)
+    // ---------------------------------------------------------------------
+
+    @SuppressLint("MissingPermission")
+    private fun startAdvertising(adapter: android.bluetooth.BluetoothAdapter) {
+        val advertiser = adapter.bluetoothLeAdvertiser ?: return
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setConnectable(true)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+            .build()
+        val data = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addServiceUuid(android.os.ParcelUuid(SERVICE_UUID))
+            .build()
+        advertiser.startAdvertising(settings, data, advertiseCallback)
+    }
+
+    private val advertiseCallback = object : AdvertiseCallback() {
+        override fun onStartFailure(errorCode: Int) {
+            Log.w(TAG, "Advertising failed to start: $errorCode")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startScanning(adapter: android.bluetooth.BluetoothAdapter) {
+        val scanner = adapter.bluetoothLeScanner ?: return
+        val filter = ScanFilter.Builder().setServiceUuid(android.os.ParcelUuid(SERVICE_UUID)).build()
+        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build()
+        scanner.startScan(listOf(filter), settings, scanCallback)
+    }
+
+    private val scanCallback = object : ScanCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val device = result.device
+            if (peripheralLinks.containsKey(device.address)) return
+            if (!connectingAddresses.add(device.address)) return
+            device.connectGatt(this@BleMeshService, false, gattClientCallback)
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            Log.w(TAG, "Scan failed: $errorCode")
+        }
+    }
+
+    private val gattClientCallback = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            when (newState) {
+                BluetoothProfile.STATE_CONNECTED -> {
+                    peripheralLinks[gatt.device.address] = PeripheralLink(gatt)
+                    gatt.requestMtu(512)
+                }
+                BluetoothProfile.STATE_DISCONNECTED -> {
+                    peripheralLinks.remove(gatt.device.address)
+                    connectingAddresses.remove(gatt.device.address)
+                    gatt.close()
+                    refreshPeerCount()
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            peripheralLinks[gatt.device.address]?.mtu = mtu
+            gatt.discoverServices()
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            val service = gatt.getService(SERVICE_UUID)
+            val char = service?.getCharacteristic(CHAR_UUID)
+            if (char == null) {
+                Log.w(TAG, "onServicesDiscovered: service/characteristic not found on ${gatt.device.address}, status=$status")
+                return
+            }
+            gatt.setCharacteristicNotification(char, true)
+            val cccd = char.getDescriptor(CCCD_UUID)
+            if (cccd != null) {
+                cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                gatt.writeDescriptor(cccd)
+            }
+            refreshPeerCount()
+            val toSend = meshEngine?.packetsForNewPeer() ?: emptyList()
+            Log.d(TAG, "onServicesDiscovered: ${gatt.device.address}, sending ${toSend.size} packets")
+            toSend.forEach { enqueueToPeripheral(gatt, char, it) }
+        }
+
+        // Android < 13 (API < 33, e.g. the Kindle) only ever calls this deprecated 2-arg
+        // overload; API 33+ calls the 3-arg one below instead. Both are needed.
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            val link = peripheralLinks[gatt.device.address] ?: return
+            onChunkReceived(characteristic.value ?: return, link.reassembler)
+        }
+
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            val link = peripheralLinks[gatt.device.address] ?: return
+            onChunkReceived(value, link.reassembler)
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            val link = peripheralLinks[gatt.device.address] ?: return
+            sendNextQueuedChunkToPeripheral(gatt, characteristic, link)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enqueueToPeripheral(gatt: BluetoothGatt, char: BluetoothGattCharacteristic, packetBytes: ByteArray) {
+        val link = peripheralLinks[gatt.device.address] ?: return
+        val chunkSize = (link.mtu - 3).takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
+        val packetId = packetBytes.copyOfRange(3, 19)
+        val chunks = Fragmenter.fragment(packetId, packetBytes, chunkSize)
+        synchronized(link.queue) {
+            link.queue.pending.addAll(chunks)
+            if (!link.queue.busy) sendNextQueuedChunkToPeripheral(gatt, char, link)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendNextQueuedChunkToPeripheral(gatt: BluetoothGatt, char: BluetoothGattCharacteristic, link: PeripheralLink) {
+        synchronized(link.queue) {
+            val next = link.queue.pending.poll()
+            if (next == null) {
+                link.queue.busy = false
+                return
+            }
+            link.queue.busy = true
+            Log.d(TAG, "sendNextQueuedChunkToPeripheral: writing ${next.size} bytes to ${gatt.device.address}")
+            char.setValue(next)
+            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            val ok = gatt.writeCharacteristic(char)
+            Log.d(TAG, "sendNextQueuedChunkToPeripheral: writeCharacteristic returned $ok")
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Shared incoming/outgoing packet handling
+    // ---------------------------------------------------------------------
+
+    private fun onChunkReceived(chunk: ByteArray, reassembler: Reassembler) {
+        Log.d(TAG, "onChunkReceived: ${chunk.size} bytes")
+        val full = reassembler.addChunk(chunk)
+        if (full == null) {
+            Log.d(TAG, "onChunkReceived: chunk buffered, packet not complete yet")
+            return
+        }
+        Log.d(TAG, "onChunkReceived: packet reassembled, ${full.size} bytes")
+        val result = meshEngine?.handleIncoming(full)
+        if (result == null) {
+            Log.w(TAG, "onChunkReceived: meshEngine not ready")
+            return
+        }
+        Log.d(TAG, "onChunkReceived: event=${result.event} relay=${result.relayBytes != null}")
+        result.event?.let { _events.tryEmit(it) }
+        result.relayBytes?.let { relay -> broadcastToAllLinks(relay) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun broadcastToAllLinks(packetBytes: ByteArray) {
+        Log.d(TAG, "broadcastToAllLinks: ${packetBytes.size} bytes to ${centralLinks.size} centralLinks + ${peripheralLinks.size} peripheralLinks")
+        centralLinks.values.forEach { enqueueToCentral(it, packetBytes) }
+        peripheralLinks.forEach { (address, link) ->
+            val char = link.gatt.getService(SERVICE_UUID)?.getCharacteristic(CHAR_UUID)
+            if (char == null) {
+                Log.w(TAG, "broadcastToAllLinks: no characteristic found for peripheral link $address")
+                return@forEach
+            }
+            enqueueToPeripheral(link.gatt, char, packetBytes)
+        }
+    }
+
+    private fun refreshPeerCount() {
+        val distinct = HashSet<String>()
+        distinct.addAll(centralLinks.keys)
+        distinct.addAll(peripheralLinks.keys)
+        _connectedPeerCount.value = distinct.size
+    }
+
+    /** Returns the sent message's id (hex) so callers can record it locally, or null on failure. */
+    fun sendPublicMessage(text: String): String? {
+        val bytes = meshEngine?.createPublicMessage(text) ?: return null
+        broadcastToAllLinks(bytes)
+        return PacketCodec.deserialize(bytes)?.messageIdHex
+    }
+
+    /** Returns null if we don't yet know the recipient's agreement key (no ANNOUNCE seen yet). */
+    fun sendDirectMessage(recipientSigningPubKeyHex: String, text: String): String? {
+        val bytes = meshEngine?.createDirectMessage(recipientSigningPubKeyHex, text) ?: return null
+        broadcastToAllLinks(bytes)
+        return PacketCodec.deserialize(bytes)?.messageIdHex
+    }
+
+    fun knowsAgreementKeyFor(recipientSigningPubKeyHex: String): Boolean =
+        meshEngine?.agreementKeyFor(recipientSigningPubKeyHex) != null
+
+    fun myPublicKeyHex(): String? = identity?.publicKeyHex
+    fun myNickname(): String? = identity?.nickname
+}
