@@ -99,7 +99,7 @@ fun MeshTalkApp(
             ) }
             composable(ROUTE_AI_CHAT) { AiChatScreen() }
             composable(ROUTE_FIND_ALL) { FindAllScreen(repository, onOpenPeer = { peerKey ->
-                navController.navigate("dm/$peerKey")
+                navController.navigate("find/$peerKey")
             }) }
             composable(ROUTE_SETTINGS) { SettingsScreen(repository) }
             composable(ROUTE_DM_THREAD) { backStackEntry ->

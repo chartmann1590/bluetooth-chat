@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -21,10 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.charles.meshtalk.app.repository.MeshRepository
+import com.charles.meshtalk.app.sensors.rememberCompassHeading
 import com.charles.meshtalk.app.ui.theme.SignalGreen
 
 /**
@@ -39,6 +45,8 @@ fun FindScreen(repository: MeshRepository, peerKeyHex: String) {
     val rssiMap by repository.peerRssi.collectAsState()
     val nickname = contacts.firstOrNull { it.signingPubKeyHex == peerKeyHex }?.nickname ?: peerKeyHex.take(10)
     val rssi = rssiMap[peerKeyHex]
+    val heading by rememberCompassHeading()
+    val bearing = rememberSignalBearing(heading, rssi)
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Find $nickname", fontFamily = FontFamily.Monospace) })
@@ -61,6 +69,13 @@ fun FindScreen(repository: MeshRepository, peerKeyHex: String) {
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             } else {
+                val angleDeg = (bearing ?: heading) - heading
+                Icon(
+                    Icons.Filled.Navigation,
+                    contentDescription = "Direction to $nickname",
+                    tint = SignalGreen,
+                    modifier = Modifier.size(64.dp).rotate(angleDeg).padding(bottom = 8.dp)
+                )
                 val (label, filledBars) = proximityFor(rssi)
                 Text(label, style = MaterialTheme.typography.headlineSmall, color = SignalGreen, fontWeight = FontWeight.Bold)
                 Text(
@@ -73,7 +88,9 @@ fun FindScreen(repository: MeshRepository, peerKeyHex: String) {
                 SignalBars(filledBars = filledBars)
                 Text(
                     "Signal strength is a rough guide, not exact distance — it's affected by walls, " +
-                        "orientation, and interference. Move around and watch it change.",
+                        "orientation, and interference. The arrow is a rolling \"which way was the " +
+                        "signal strongest\" estimate, not a real compass bearing — turn around " +
+                        "slowly to help it settle.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 24.dp),

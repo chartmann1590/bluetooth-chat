@@ -60,7 +60,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-private data class HeadingSample(val heading: Float, val rssi: Int, val time: Long)
+private data class RadarHeadingSample(val heading: Float, val rssi: Int, val time: Long)
 
 /**
  * A live radar of everyone currently reachable over Bluetooth: a map of roughly where you are (best
@@ -105,7 +105,7 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
     val currentHeading = rememberUpdatedState(heading)
     val currentRssi = rememberUpdatedState(rssiMap)
     LaunchedEffect(Unit) {
-        val history = mutableMapOf<String, MutableList<HeadingSample>>()
+        val history = mutableMapOf<String, MutableList<RadarHeadingSample>>()
         while (true) {
             delay(500)
             val now = System.currentTimeMillis()
@@ -113,7 +113,7 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
             val rssiSnapshot = currentRssi.value
             for ((peerKey, rssi) in rssiSnapshot) {
                 val samples = history.getOrPut(peerKey) { mutableListOf() }
-                samples.add(HeadingSample(h, rssi, now))
+                samples.add(RadarHeadingSample(h, rssi, now))
                 samples.removeAll { now - it.time > 12_000 }
                 if (samples.isEmpty()) continue
                 val minRssi = samples.minOf { it.rssi }
