@@ -3,18 +3,19 @@ package com.charles.meshtalk.app.ble
 enum class PacketType(val code: Byte) {
     ANNOUNCE(1),
     PUBLIC(2),
-    DM(3);
+    DM(3),
+    READ_RECEIPT(4);
 
     companion object {
         fun fromCode(code: Byte): PacketType = entries.first { it.code == code }
     }
 }
 
-/** Zero-filled recipient key used for broadcast (ANNOUNCE/PUBLIC) packets. */
+/** Zero-filled recipient key used for broadcast (ANNOUNCE/PUBLIC, and public READ_RECEIPTs) packets. */
 val BROADCAST_KEY: ByteArray = ByteArray(32)
 
-// v2: payloadLen widened from 2 to 4 bytes to carry compressed images/files.
-const val PACKET_VERSION: Byte = 2
+// v3: added READ_RECEIPT packet type.
+const val PACKET_VERSION: Byte = 3
 
 /**
  * A single mesh packet. `senderSigningPubKey` is the sender's persistent

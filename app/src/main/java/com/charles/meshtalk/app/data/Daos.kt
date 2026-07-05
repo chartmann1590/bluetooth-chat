@@ -39,3 +39,15 @@ interface MessageDao {
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE id = :id)")
     suspend fun exists(id: String): Boolean
 }
+
+@Dao
+interface ReadReceiptDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(receipt: ReadReceiptEntity)
+
+    @Query("SELECT * FROM read_receipts WHERE messageId = :messageId ORDER BY timestamp ASC")
+    fun observeReadersFor(messageId: String): Flow<List<ReadReceiptEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM read_receipts WHERE messageId = :messageId AND readerPubKeyHex = :readerPubKeyHex)")
+    suspend fun hasRead(messageId: String, readerPubKeyHex: String): Boolean
+}

@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,10 @@ fun PublicFeedScreen(repository: MeshRepository) {
     val peerCount by repository.connectedPeerCount.collectAsState()
     var draft by remember { mutableStateOf("") }
 
+    LaunchedEffect(messages) {
+        messages.filter { !it.isMine }.forEach { repository.markAsRead(it) }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("PUBLIC") },
@@ -50,7 +55,7 @@ fun PublicFeedScreen(repository: MeshRepository) {
             }
         )
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            items(messages, key = { it.id }) { message -> PublicMessageRow(message) }
+            items(messages, key = { it.id }) { message -> PublicMessageRow(repository, message) }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -58,7 +63,8 @@ fun PublicFeedScreen(repository: MeshRepository) {
         ) {
             AttachButtons(
                 onImagePicked = { bytes, mime -> repository.sendPublicImage(bytes, mime) },
-                onFilePicked = { bytes, mime, filename -> repository.sendPublicFile(bytes, mime, filename) }
+                onFilePicked = { bytes, mime, filename -> repository.sendPublicFile(bytes, mime, filename) },
+                onLocationPicked = { lat, lng, mapBytes, mapMime -> repository.sendPublicLocation(lat, lng, mapBytes, mapMime) }
             )
             OutlinedTextField(
                 value = draft,
@@ -80,7 +86,7 @@ fun PublicFeedScreen(repository: MeshRepository) {
 }
 
 @Composable
-private fun PublicMessageRow(message: MessageEntity) {
+private fun PublicMessageRow(repository: MeshRepository, message: MessageEntity) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(
@@ -96,6 +102,7 @@ private fun PublicMessageRow(message: MessageEntity) {
             )
         }
         MessageContentBody(message)
+        ReadReceiptIndicator(repository, message)
     }
 }
 

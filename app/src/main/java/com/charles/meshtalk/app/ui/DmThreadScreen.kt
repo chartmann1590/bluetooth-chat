@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,10 +46,14 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
         onDispose { AppVisibility.openDmPeerKeyHex = null }
     }
 
+    LaunchedEffect(messages) {
+        messages.filter { !it.isMine }.forEach { repository.markAsRead(it) }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text(nickname, fontFamily = FontFamily.Monospace) })
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            items(messages, key = { it.id }) { message -> DmMessageRow(message) }
+            items(messages, key = { it.id }) { message -> DmMessageRow(repository, message) }
         }
         if (sendFailed) {
             Text(
@@ -67,6 +72,9 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
                 },
                 onFilePicked = { bytes, mime, filename ->
                     sendFailed = !repository.sendDirectFile(peerKeyHex, bytes, mime, filename)
+                },
+                onLocationPicked = { lat, lng, mapBytes, mapMime ->
+                    sendFailed = !repository.sendDirectLocation(peerKeyHex, lat, lng, mapBytes, mapMime)
                 }
             )
             OutlinedTextField(
@@ -90,7 +98,7 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
 }
 
 @Composable
-private fun DmMessageRow(message: MessageEntity) {
+private fun DmMessageRow(repository: MeshRepository, message: MessageEntity) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(
@@ -105,5 +113,6 @@ private fun DmMessageRow(message: MessageEntity) {
             )
         }
         MessageContentBody(message)
+        ReadReceiptIndicator(repository, message)
     }
 }

@@ -14,6 +14,7 @@ import com.charles.meshtalk.app.crypto.toHex
 import com.charles.meshtalk.app.data.AppDatabase
 import com.charles.meshtalk.app.data.ContactEntity
 import com.charles.meshtalk.app.data.MessageEntity
+import com.charles.meshtalk.app.data.ReadReceiptEntity
 import com.charles.meshtalk.app.notifications.DmNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +60,24 @@ class MeshRepository private constructor(private val appContext: Context) {
 
     fun dmThread(peerKeyHex: String): Flow<List<MessageEntity>> = db.messageDao().observeDmThread(peerKeyHex)
 
+    fun readersFor(messageId: String): Flow<List<ReadReceiptEntity>> = db.readReceiptDao().observeReadersFor(messageId)
+
+    /** Marks a received message as read by us: sends a receipt (public = everyone learns; DM =
+     * only the original sender) and records our own read locally so we don't resend it. No-op for
+     * our own messages or ones we've already acked. */
+    fun markAsRead(message: MessageEntity) {
+        if (message.isMine) return
+        val myKey = myPublicKeyHex.value ?: return
+        scope.launch {
+            if (db.readReceiptDao().hasRead(message.id, myKey)) return@launch
+            val recipientKeyHex = if (message.type == "PUBLIC") null else message.senderPubKeyHex
+            service?.sendReadReceipt(message.id, recipientKeyHex)
+            db.readReceiptDao().insert(
+                ReadReceiptEntity(message.id, myKey, myNickname.value ?: myKey.take(8), System.currentTimeMillis())
+            )
+        }
+    }
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val svc = (binder as BleMeshService.LocalBinder).getService()
@@ -94,6 +113,8 @@ class MeshRepository private constructor(private val appContext: Context) {
     fun sendPublicImage(bytes: ByteArray, mime: String = "image/jpeg") = sendPublicContent(MessageContent.Image(bytes, mime))
     fun sendPublicFile(bytes: ByteArray, mime: String, filename: String) =
         sendPublicContent(MessageContent.File(bytes, mime, filename))
+    fun sendPublicLocation(latitude: Double, longitude: Double, mapBytes: ByteArray?, mapMime: String?) =
+        sendPublicContent(MessageContent.Location(latitude, longitude, mapBytes, mapMime))
 
     private fun sendPublicContent(content: MessageContent) {
         val svc = service ?: return
@@ -116,6 +137,10 @@ class MeshRepository private constructor(private val appContext: Context) {
 
     fun sendDirectFile(recipientPubKeyHex: String, bytes: ByteArray, mime: String, filename: String): Boolean =
         sendDirectContent(recipientPubKeyHex, MessageContent.File(bytes, mime, filename))
+
+    fun sendDirectLocation(
+        recipientPubKeyHex: String, latitude: Double, longitude: Double, mapBytes: ByteArray?, mapMime: String?
+    ): Boolean = sendDirectContent(recipientPubKeyHex, MessageContent.Location(latitude, longitude, mapBytes, mapMime))
 
     private fun sendDirectContent(recipientPubKeyHex: String, content: MessageContent): Boolean {
         val svc = service ?: return false
@@ -163,6 +188,13 @@ class MeshRepository private constructor(private val appContext: Context) {
                     DmNotifier.notifyNewDm(appContext, event.senderPubKeyHex, nickname, previewFor(event.content))
                 }
             }
+            is MeshEvent.ReadReceiptReceived -> scope.launch {
+                db.readReceiptDao().insert(
+                    ReadReceiptEntity(
+                        event.originalMessageIdHex, event.readerPubKeyHex, event.readerNickname, event.timestamp
+                    )
+                )
+            }
         }
     }
 
@@ -174,6 +206,9 @@ class MeshRepository private constructor(private val appContext: Context) {
         return when (content) {
             is MessageContent.Image -> MessageContent.Text("📷 Photo (not received — attachments disabled in Settings)")
             is MessageContent.File -> MessageContent.Text("📎 ${content.filename} (not received — attachments disabled in Settings)")
+            // Coordinates are tiny (16 bytes) and the point of the feature, so only the bulky map
+            // thumbnail image is dropped, not the location itself.
+            is MessageContent.Location -> content.copy(mapImageBytes = null, mapImageMime = null)
             is MessageContent.Text -> content
         }
     }
@@ -182,6 +217,7 @@ class MeshRepository private constructor(private val appContext: Context) {
         is MessageContent.Text -> content.body
         is MessageContent.Image -> "📷 Photo"
         is MessageContent.File -> "📎 ${content.filename}"
+        is MessageContent.Location -> "📍 Location"
     }
 
     private fun entityFor(
@@ -209,6 +245,13 @@ class MeshRepository private constructor(private val appContext: Context) {
             id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
             peerPubKeyHex = peerKeyHex, contentType = "FILE", body = content.filename,
             mediaBytes = content.bytes, mediaMimeType = content.mime, mediaFilename = content.filename,
+            timestamp = timestamp, isMine = isMine, delivered = true
+        )
+        is MessageContent.Location -> MessageEntity(
+            id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
+            peerPubKeyHex = peerKeyHex, contentType = "LOCATION", body = "Location",
+            mediaBytes = content.mapImageBytes, mediaMimeType = content.mapImageMime,
+            latitude = content.latitude, longitude = content.longitude,
             timestamp = timestamp, isMine = isMine, delivered = true
         )
     }

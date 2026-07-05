@@ -1,9 +1,12 @@
 package com.charles.meshtalk.app.ui
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -22,33 +25,46 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.charles.meshtalk.app.data.MessageEntity
 import com.charles.meshtalk.app.media.FilePrep
 import com.charles.meshtalk.app.media.ImageCompressor
+import com.charles.meshtalk.app.media.LocationFetcher
 import com.charles.meshtalk.app.media.MediaPrepResult
+import com.charles.meshtalk.app.media.StaticMapFetcher
+import com.charles.meshtalk.app.repository.MeshRepository
+import com.charles.meshtalk.app.ui.theme.SignalGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Renders a message's body: plain text, an inline decoded image, or a file chip with save action. */
+/** Renders a message's body: plain text, an inline decoded image, a file chip, or a location card. */
 @Composable
 fun MessageContentBody(message: MessageEntity) {
     when (message.contentType) {
@@ -71,7 +87,59 @@ fun MessageContentBody(message: MessageEntity) {
             }
         }
         "FILE" -> FileChip(message)
+        "LOCATION" -> LocationCard(message)
         else -> Text(message.body, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+private fun LocationCard(message: MessageEntity) {
+    val context = LocalContext.current
+    val lat = message.latitude
+    val lng = message.longitude
+    if (lat == null || lng == null) {
+        Text("[location unavailable]", modifier = Modifier.padding(top = 2.dp))
+        return
+    }
+    val bytes = message.mediaBytes
+    val bitmap = remember(message.id) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
+
+    Column(
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .widthIn(max = 280.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { openInMaps(context, lat, lng) }
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Map",
+                modifier = Modifier.heightIn(max = 180.dp)
+            )
+        }
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.LocationOn, contentDescription = null, tint = SignalGreen)
+            Column(modifier = Modifier.padding(start = 8.dp)) {
+                Text("%.5f, %.5f".format(lat, lng), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Tap to open in Maps",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private fun openInMaps(context: Context, latitude: Double, longitude: Double) {
+    val uri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
+    val intent = Intent(Intent.ACTION_VIEW, uri)
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "No maps app available", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -166,14 +234,17 @@ private fun saveToDownloads(context: Context, message: MessageEntity) {
     ).show()
 }
 
-/** Two small icon buttons for picking a photo (auto-compressed) or a generic file (size-capped). */
+/** Three small icon buttons for picking a photo (auto-compressed), a generic file (size-capped),
+ * or sharing the current location (with a best-effort static map thumbnail). */
 @Composable
 fun AttachButtons(
     onImagePicked: (ByteArray, String) -> Unit,
-    onFilePicked: (ByteArray, String, String) -> Unit
+    onFilePicked: (ByteArray, String, String) -> Unit,
+    onLocationPicked: (Double, Double, ByteArray?, String?) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var fetchingLocation by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -203,6 +274,32 @@ fun AttachButtons(
         }
     }
 
+    fun fetchAndShareLocation() {
+        fetchingLocation = true
+        LocationFetcher.getCurrentLocation(context) { location ->
+            if (location == null) {
+                fetchingLocation = false
+                Toast.makeText(context, "Couldn't get current location", Toast.LENGTH_LONG).show()
+                return@getCurrentLocation
+            }
+            scope.launch {
+                val mapBytes = withContext(Dispatchers.IO) {
+                    StaticMapFetcher.fetchJpeg(location.latitude, location.longitude)
+                }
+                fetchingLocation = false
+                onLocationPicked(location.latitude, location.longitude, mapBytes, if (mapBytes != null) "image/jpeg" else null)
+            }
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) fetchAndShareLocation() else {
+            Toast.makeText(context, "Location permission needed to share your location", Toast.LENGTH_LONG).show()
+        }
+    }
+
     Row {
         IconButton(onClick = { imagePicker.launch("image/*") }) {
             Icon(Icons.Filled.Photo, contentDescription = "Attach photo")
@@ -210,13 +307,60 @@ fun AttachButtons(
         IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
             Icon(Icons.Filled.AttachFile, contentDescription = "Attach file")
         }
+        IconButton(
+            enabled = !fetchingLocation,
+            onClick = {
+                val granted = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) fetchAndShareLocation()
+                else locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        ) {
+            if (fetchingLocation) {
+                CircularProgressIndicator(modifier = Modifier.padding(4.dp))
+            } else {
+                Icon(Icons.Filled.LocationOn, contentDescription = "Share location")
+            }
+        }
     }
 }
 
-private fun queryDisplayName(context: Context, uri: android.net.Uri): String? {
+private fun queryDisplayName(context: Context, uri: Uri): String? {
     context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
         val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
         if (nameIndex >= 0 && cursor.moveToFirst()) return cursor.getString(nameIndex)
     }
     return null
+}
+
+/** Small "sent/read" indicator shown under a message: a single check once sent, a colored double
+ * check once at least one reader (DM: the recipient; public: any peer) has read it. */
+@Composable
+fun ReadReceiptIndicator(repository: MeshRepository, message: MessageEntity) {
+    if (!message.isMine) return
+    val readers by repository.readersFor(message.id).collectAsState(initial = emptyList())
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (readers.isEmpty()) {
+            Icon(
+                Icons.Filled.Done, contentDescription = "Sent",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 4.dp).heightIn(max = 14.dp)
+            )
+            Text("Sent", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Icon(
+                Icons.Filled.DoneAll, contentDescription = "Read",
+                tint = SignalGreen,
+                modifier = Modifier.padding(end = 4.dp).heightIn(max = 14.dp)
+            )
+            val label = if (message.type == "PUBLIC") {
+                "Read by " + readers.joinToString(", ") { it.readerNickname }
+            } else {
+                "Read"
+            }
+            Text(label, style = MaterialTheme.typography.bodySmall, color = SignalGreen, maxLines = 1)
+        }
+    }
 }

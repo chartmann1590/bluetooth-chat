@@ -9,8 +9,14 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
+
+    <!-- Needed pre-31 for BLE scanning, and on all versions for the location-sharing feature -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Only used to fetch a static map thumbnail when sharing a location, if connectivity happens
+         to be available; the app otherwise works fully offline over Bluetooth. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Modern Bluetooth permissions for API 31+ -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"

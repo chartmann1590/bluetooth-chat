@@ -32,6 +32,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.charles.meshtalk.app.MainActivity
 import com.charles.meshtalk.app.crypto.Identity
+import com.charles.meshtalk.app.crypto.hexToBytes
 import com.charles.meshtalk.app.hasAllPermissions
 import com.charles.meshtalk.app.requiredBluetoothPermissions
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -559,6 +560,14 @@ class BleMeshService : Service() {
 
     fun knowsAgreementKeyFor(recipientSigningPubKeyHex: String): Boolean =
         meshEngine?.agreementKeyFor(recipientSigningPubKeyHex) != null
+
+    /** [recipientSigningPubKeyHex] null means broadcast (public message receipt, everyone records it). */
+    fun sendReadReceipt(originalMessageIdHex: String, recipientSigningPubKeyHex: String?) {
+        val engine = meshEngine ?: return
+        val recipientKey = recipientSigningPubKeyHex?.hexToBytes() ?: BROADCAST_KEY
+        val bytes = engine.createReadReceipt(originalMessageIdHex, recipientKey)
+        broadcastToAllLinks(bytes)
+    }
 
     fun myPublicKeyHex(): String? = identity?.publicKeyHex
     fun myNickname(): String? = identity?.nickname

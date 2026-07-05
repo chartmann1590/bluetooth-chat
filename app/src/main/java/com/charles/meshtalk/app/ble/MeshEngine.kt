@@ -29,6 +29,13 @@ sealed class MeshEvent {
         val content: MessageContent,
         val timestamp: Long
     ) : MeshEvent()
+
+    data class ReadReceiptReceived(
+        val originalMessageIdHex: String,
+        val readerPubKeyHex: String,
+        val readerNickname: String,
+        val timestamp: Long
+    ) : MeshEvent()
 }
 
 /**
@@ -107,6 +114,20 @@ class MeshEngine(private val identity: Identity) {
         return bytes
     }
 
+    /**
+     * `recipientSigningPubKey` should be [BROADCAST_KEY] for a receipt on a public message (every
+     * peer records who's read it), or the original sender's key for a receipt on a DM (only that
+     * peer needs to know/display it).
+     */
+    fun createReadReceipt(originalMessageIdHex: String, recipientSigningPubKey: ByteArray): ByteArray {
+        val packet = PacketCodec.buildAndSign(
+            identity, PacketType.READ_RECEIPT, DEFAULT_TTL, recipientSigningPubKey, originalMessageIdHex.hexToBytes()
+        )
+        val bytes = PacketCodec.serialize(packet)
+        remember(packet.messageIdHex, bytes)
+        return bytes
+    }
+
     /** Result of processing an inbound raw (reassembled) packet. */
     data class Result(val event: MeshEvent?, val relayBytes: ByteArray?)
 
@@ -159,6 +180,20 @@ class MeshEngine(private val identity: Identity) {
                         null // decryption failed, drop silently
                     }
                 } else null // not for us; just relay
+            }
+            PacketType.READ_RECEIPT -> {
+                val isPublicReceipt = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublicReceipt || isForMe) {
+                    val readerHex = packet.senderSigningPubKey.toHex()
+                    val originalMessageIdHex = packet.payload.joinToString("") { "%02x".format(it) }
+                    MeshEvent.ReadReceiptReceived(
+                        originalMessageIdHex,
+                        readerHex,
+                        nicknames[readerHex] ?: readerHex.take(8),
+                        packet.timestamp
+                    )
+                } else null // a DM receipt meant for someone else; just relay
             }
         }
 

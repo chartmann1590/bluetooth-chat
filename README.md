@@ -13,6 +13,23 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 - **Photos & files** — send a compressed photo or a small file inline, in both the public feed and DMs. A per-user setting lets you turn off receiving attachments entirely (you still relay them for the rest of the mesh, you just don't store/display them locally).
 - **Background operation** — a foreground service keeps the mesh alive when the app isn't in the foreground, with an optional battery-optimization exemption for reliability.
 - **DM notifications** — get notified when a new direct message arrives while you're not looking at that conversation; tapping the notification opens the thread.
+- **Read receipts** — sent messages show a "Read" checkmark once the recipient (DM) or any peer (public feed, listing who) has opened it.
+- **Location sharing** — share your current coordinates with a best-effort static map thumbnail (fetched once at send time, then carried over the mesh like a photo — no internet needed to view it after that); falls back to coordinates + "open in Maps" if no connectivity was available when sending.
+
+## Screenshots
+
+<table>
+<tr>
+<td><img src="docs/screenshots/onboarding.png" width="220" alt="Onboarding screen"><br><sub>Onboarding</sub></td>
+<td><img src="docs/screenshots/onboarding-battery-prompt.png" width="220" alt="Battery optimization prompt"><br><sub>Background reliability prompt</sub></td>
+<td><img src="docs/screenshots/public-feed-location-readreceipt.png" width="220" alt="Public feed with shared location and read receipt"><br><sub>Public feed: location + read receipt</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/dm-thread-read-receipt.png" width="220" alt="DM thread with read receipt"><br><sub>DM thread: read receipt</sub></td>
+<td><img src="docs/screenshots/settings.png" width="220" alt="Settings screen"><br><sub>Settings</sub></td>
+<td></td>
+</tr>
+</table>
 
 ## How it works
 
@@ -55,3 +72,4 @@ app/src/main/java/com/charles/meshtalk/app/
 - Peer counts can transiently show one higher than the number of physical devices right after a fresh connection, until each link's identity announcement is exchanged (BLE address rotation means one phone can briefly appear as two connections).
 - No delivery confirmation or retry for failed sends — mesh messaging is best-effort.
 - Attachments are capped small by design; video isn't supported.
+- The static map thumbnail for a shared location requires the sender to have internet connectivity at the moment they share it; the coordinates and "open in Maps" fallback always work regardless.
