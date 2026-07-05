@@ -621,6 +621,28 @@ class BleMeshService : Service() {
         broadcastToAllLinks(bytes)
     }
 
+    /** [recipientSigningPubKeyHex] null means the public feed. Returns false if this is a DM edit
+     * and we don't (yet) know the recipient's agreement key. */
+    fun sendEdit(targetMessageIdHex: String, newText: String, recipientSigningPubKeyHex: String?): Boolean {
+        val bytes = meshEngine?.createEdit(targetMessageIdHex, newText, recipientSigningPubKeyHex) ?: return false
+        broadcastToAllLinks(bytes)
+        return true
+    }
+
+    fun sendDelete(targetMessageIdHex: String, recipientSigningPubKeyHex: String?): Boolean {
+        val bytes = meshEngine?.createDelete(targetMessageIdHex, recipientSigningPubKeyHex) ?: return false
+        broadcastToAllLinks(bytes)
+        return true
+    }
+
+    fun sendReaction(
+        targetMessageIdHex: String, emoji: String, added: Boolean, recipientSigningPubKeyHex: String?
+    ): Boolean {
+        val bytes = meshEngine?.createReaction(targetMessageIdHex, emoji, added, recipientSigningPubKeyHex) ?: return false
+        broadcastToAllLinks(bytes)
+        return true
+    }
+
     fun myPublicKeyHex(): String? = identity?.publicKeyHex
     fun myNickname(): String? = identity?.nickname
 }

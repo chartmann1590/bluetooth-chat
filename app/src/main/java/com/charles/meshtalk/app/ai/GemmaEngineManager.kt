@@ -7,10 +7,13 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
@@ -41,6 +44,17 @@ object GemmaEngineManager {
 
     private val _state = MutableStateFlow<ModelState>(ModelState.NotDownloaded)
     val state: StateFlow<ModelState> = _state.asStateFlow()
+
+    // Outlives any single screen — used so the onboarding opt-in can kick off the download and
+    // move on immediately, with the download continuing even if the user navigates away.
+    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Starts the download in the background if it hasn't already started or finished; safe to
+     * call more than once (e.g. if onboarding re-runs). Progress is still observable via [state]. */
+    fun downloadInBackground(context: Context) {
+        if (_state.value is ModelState.Downloading || modelFile(context).exists()) return
+        managerScope.launch { downloadModel(context) }
+    }
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null

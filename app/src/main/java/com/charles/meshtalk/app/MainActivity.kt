@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.charles.meshtalk.app.ai.GemmaEngineManager
 import com.charles.meshtalk.app.crypto.Identity
 import com.charles.meshtalk.app.repository.MeshRepository
 import com.charles.meshtalk.app.ui.MeshTalkApp
@@ -42,6 +43,7 @@ import com.charles.meshtalk.app.ui.theme.MeshTalkTheme
 const val EXTRA_OPEN_DM_PEER_KEY = "open_dm_peer_key"
 private const val PREFS_NAME = "meshtalk_prefs"
 private const val PREF_BATTERY_PROMPT_SEEN = "battery_prompt_seen"
+private const val PREF_AI_PROMPT_SEEN = "ai_download_prompt_seen"
 
 fun requiredBluetoothPermissions(): Array<String> {
     val perms = mutableListOf<String>()
@@ -82,6 +84,9 @@ class MainActivity : ComponentActivity() {
             var showBatteryPrompt by remember {
                 mutableStateOf(!isIgnoringBatteryOptimizations(applicationContext) && !prefs.getBoolean(PREF_BATTERY_PROMPT_SEEN, false))
             }
+            var showAiPrompt by remember {
+                mutableStateOf(!prefs.getBoolean(PREF_AI_PROMPT_SEEN, false))
+            }
             val batteryLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.StartActivityForResult()
             ) {
@@ -101,6 +106,18 @@ class MainActivity : ComponentActivity() {
                             repository.start(nickname)
                             onboarded = true
                         })
+                    } else if (showAiPrompt) {
+                        AiDownloadPromptScreen(
+                            onDownload = {
+                                GemmaEngineManager.downloadInBackground(applicationContext)
+                                prefs.edit().putBoolean(PREF_AI_PROMPT_SEEN, true).apply()
+                                showAiPrompt = false
+                            },
+                            onSkip = {
+                                prefs.edit().putBoolean(PREF_AI_PROMPT_SEEN, true).apply()
+                                showAiPrompt = false
+                            }
+                        )
                     } else if (showBatteryPrompt) {
                         BatteryOptimizationScreen(
                             onEnable = {
@@ -157,6 +174,30 @@ private fun PermissionGate(onRequest: () -> Unit) {
         Text("MeshTalk needs Bluetooth (and nearby-device) permission to talk to other phones directly over BLE.")
         androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
         Button(onClick = onRequest) { Text("Grant permissions") }
+    }
+}
+
+@Composable
+private fun AiDownloadPromptScreen(onDownload: () -> Unit, onSkip: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Chat with an on-device AI, offline",
+            style = MaterialTheme.typography.titleLarge
+        )
+        Text(
+            "MeshTalk can run Google's Gemma 4 model entirely on this phone using LiteRT-LM — " +
+                "no internet needed once it's downloaded, and nothing you type into it ever goes " +
+                "over the mesh or the internet. It's a one-time ~2.6GB download over Wi-Fi and " +
+                "works best on devices with 8GB+ RAM; you can always download it later from the " +
+                "AI tab instead.",
+            modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)
+        )
+        Button(onClick = onDownload) { Text("Download now (2.6GB)") }
+        OutlinedButton(onClick = onSkip, modifier = Modifier.padding(top = 8.dp)) { Text("Not now") }
     }
 }
 

@@ -39,6 +39,21 @@ object LocationFetcher {
             onResult(null)
         }
     }
+
+    /** Last-known fix (may be stale/absent), returned immediately with no new GPS request — good
+     * enough for a rough "which area am I in" map backdrop, where a fresh indoor fix could take
+     * a long time or never arrive. */
+    fun getLastKnownLocation(context: Context): Location? {
+        val lm = context.getSystemService(LocationManager::class.java) ?: return null
+        return try {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .filter { lm.isProviderEnabled(it) }
+                .mapNotNull { lm.getLastKnownLocation(it) }
+                .maxByOrNull { it.time }
+        } catch (e: SecurityException) {
+            null
+        }
+    }
 }
 
 /**
@@ -51,11 +66,11 @@ object LocationFetcher {
 object StaticMapFetcher {
     private const val MAX_MAP_BYTES = 50_000
 
-    fun fetchJpeg(latitude: Double, longitude: Double): ByteArray? {
+    fun fetchJpeg(latitude: Double, longitude: Double, zoom: Int = 16, withMarker: Boolean = true): ByteArray? {
         return try {
+            val markerParam = if (withMarker) "&markers=$latitude,$longitude,lightblue1" else ""
             val url = "https://staticmap.openstreetmap.de/staticmap.php" +
-                "?center=$latitude,$longitude&zoom=16&size=400x300&maptype=mapnik" +
-                "&markers=$latitude,$longitude,lightblue1"
+                "?center=$latitude,$longitude&zoom=$zoom&size=400x300&maptype=mapnik$markerParam"
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000
                 readTimeout = 8000

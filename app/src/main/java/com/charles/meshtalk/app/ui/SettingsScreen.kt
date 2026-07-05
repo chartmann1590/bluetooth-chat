@@ -27,6 +27,7 @@ fun SettingsScreen(repository: MeshRepository) {
     val pubKeyHex by repository.myPublicKeyHex.collectAsState()
     val receiveAttachments by repository.receiveAttachments.collectAsState()
     val trackingBeacon by repository.trackingBeaconEnabled.collectAsState()
+    val findFeatureEnabled by repository.findFeatureEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Settings") })
@@ -82,6 +83,27 @@ fun SettingsScreen(repository: MeshRepository) {
                 Switch(
                     checked = trackingBeacon,
                     onCheckedChange = { repository.setTrackingBeaconEnabled(it) }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Bluetooth radar (Find tab)", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Adds a \"Find\" tab with a map and a live radar of everyone nearby, each " +
+                            "shown with an arrow and an approximate distance based on Bluetooth " +
+                            "signal strength — works without GPS or internet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = findFeatureEnabled,
+                    onCheckedChange = { repository.setFindFeatureEnabled(it) }
                 )
             }
         }

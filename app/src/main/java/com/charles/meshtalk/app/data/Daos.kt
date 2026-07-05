@@ -38,6 +38,30 @@ interface MessageDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE id = :id)")
     suspend fun exists(id: String): Boolean
+
+    @Query("SELECT senderPubKeyHex FROM messages WHERE id = :id LIMIT 1")
+    suspend fun senderOf(id: String): String?
+
+    @Query("UPDATE messages SET body = :newText, edited = 1 WHERE id = :id")
+    suspend fun editText(id: String, newText: String)
+
+    @Query("UPDATE messages SET deleted = 1, body = '', mediaBytes = NULL, mediaFilename = NULL WHERE id = :id")
+    suspend fun markDeleted(id: String)
+}
+
+@Dao
+interface ReactionDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(reaction: ReactionEntity)
+
+    @Query("DELETE FROM reactions WHERE messageId = :messageId AND reactorPubKeyHex = :reactorPubKeyHex")
+    suspend fun remove(messageId: String, reactorPubKeyHex: String)
+
+    @Query("SELECT * FROM reactions WHERE messageId = :messageId")
+    suspend fun forMessageOnce(messageId: String): List<ReactionEntity>
+
+    @Query("SELECT * FROM reactions")
+    fun observeAll(): Flow<List<ReactionEntity>>
 }
 
 @Dao

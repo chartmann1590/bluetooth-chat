@@ -130,7 +130,7 @@ private fun DmMessageRow(repository: MeshRepository, message: MessageEntity) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        MessageContentBody(message)
+        MessageContentWithActions(repository, message)
         ReadReceiptIndicator(repository, message)
     }
 }

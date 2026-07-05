@@ -84,14 +84,6 @@ fun FindScreen(repository: MeshRepository, peerKeyHex: String) {
     }
 }
 
-private fun proximityFor(rssi: Int): Pair<String, Int> = when {
-    rssi >= -55 -> "Very close" to 5
-    rssi >= -65 -> "Close" to 4
-    rssi >= -75 -> "Nearby" to 3
-    rssi >= -85 -> "Far" to 2
-    else -> "Very far" to 1
-}
-
 @Composable
 private fun SignalBars(filledBars: Int) {
     Row(verticalAlignment = Alignment.Bottom) {

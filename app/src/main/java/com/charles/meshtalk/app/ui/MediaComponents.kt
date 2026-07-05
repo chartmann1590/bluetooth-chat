@@ -56,7 +56,7 @@ import com.charles.meshtalk.app.media.FilePrep
 import com.charles.meshtalk.app.media.ImageCompressor
 import com.charles.meshtalk.app.media.LocationFetcher
 import com.charles.meshtalk.app.media.MediaPrepResult
-import com.charles.meshtalk.app.media.StaticMapFetcher
+import com.charles.meshtalk.app.media.OfflineMapCache
 import com.charles.meshtalk.app.repository.MeshRepository
 import com.charles.meshtalk.app.ui.theme.SignalGreen
 import kotlinx.coroutines.Dispatchers
@@ -284,7 +284,7 @@ fun AttachButtons(
             }
             scope.launch {
                 val mapBytes = withContext(Dispatchers.IO) {
-                    StaticMapFetcher.fetchJpeg(location.latitude, location.longitude)
+                    OfflineMapCache.getOrFetch(context, location.latitude, location.longitude, zoom = 16, withMarker = true)?.readBytes()
                 }
                 fetchingLocation = false
                 onLocationPicked(location.latitude, location.longitude, mapBytes, if (mapBytes != null) "image/jpeg" else null)

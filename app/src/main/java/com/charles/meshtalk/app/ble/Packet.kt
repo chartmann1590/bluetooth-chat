@@ -5,7 +5,10 @@ enum class PacketType(val code: Byte) {
     PUBLIC(2),
     DM(3),
     READ_RECEIPT(4),
-    TYPING(5);
+    TYPING(5),
+    EDIT(6),
+    DELETE(7),
+    REACTION(8);
 
     companion object {
         fun fromCode(code: Byte): PacketType = entries.first { it.code == code }
@@ -15,8 +18,8 @@ enum class PacketType(val code: Byte) {
 /** Zero-filled recipient key used for broadcast (ANNOUNCE/PUBLIC, and public READ_RECEIPTs) packets. */
 val BROADCAST_KEY: ByteArray = ByteArray(32)
 
-// v4: added TYPING packet type (ephemeral, not replayed to newly-connected peers).
-const val PACKET_VERSION: Byte = 4
+// v5: added EDIT/DELETE/REACTION packet types for message actions.
+const val PACKET_VERSION: Byte = 5
 
 /**
  * A single mesh packet. `senderSigningPubKey` is the sender's persistent

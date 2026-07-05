@@ -27,7 +27,21 @@ data class MessageEntity(
     val longitude: Double? = null, // LOCATION only
     val timestamp: Long,
     val isMine: Boolean,
-    val delivered: Boolean
+    val delivered: Boolean,
+    val edited: Boolean = false,
+    val deleted: Boolean = false
+)
+
+/** One reaction from one person on one message; re-reacting with the same emoji is a toggle
+ * (handled at the repository layer), so (messageId, reactorPubKeyHex) is the primary key — a
+ * given person has at most one active emoji reaction per message. */
+@Entity(tableName = "reactions", primaryKeys = ["messageId", "reactorPubKeyHex"])
+data class ReactionEntity(
+    val messageId: String,
+    val reactorPubKeyHex: String,
+    val reactorNickname: String,
+    val emoji: String,
+    val timestamp: Long
 )
 
 /** Records that [readerPubKeyHex] has read the message [messageId]; the pair is the primary key

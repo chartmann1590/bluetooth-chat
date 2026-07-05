@@ -14,6 +14,7 @@ import com.charles.meshtalk.app.crypto.toHex
 import com.charles.meshtalk.app.data.AppDatabase
 import com.charles.meshtalk.app.data.ContactEntity
 import com.charles.meshtalk.app.data.MessageEntity
+import com.charles.meshtalk.app.data.ReactionEntity
 import com.charles.meshtalk.app.data.ReadReceiptEntity
 import com.charles.meshtalk.app.notifications.DmNotifier
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +73,15 @@ class MeshRepository private constructor(private val appContext: Context) {
         service?.setTrackingBeaconEnabled(enabled)
     }
 
+    // Adds the "Find" radar tab (map + all-peers Bluetooth proximity view) to the bottom nav.
+    private val _findFeatureEnabled = MutableStateFlow(prefs.getBoolean(PREF_FIND_FEATURE, false))
+    val findFeatureEnabled: StateFlow<Boolean> = _findFeatureEnabled.asStateFlow()
+
+    fun setFindFeatureEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_FIND_FEATURE, enabled).apply()
+        _findFeatureEnabled.value = enabled
+    }
+
     // Local-only policy: still relayed to other mesh peers regardless of this setting (that's
     // just forwarding bytes), but this device won't store/display incoming photos or files.
     private val _receiveAttachments = MutableStateFlow(prefs.getBoolean(PREF_RECEIVE_ATTACHMENTS, true))
@@ -98,6 +108,59 @@ class MeshRepository private constructor(private val appContext: Context) {
     fun dmThread(peerKeyHex: String): Flow<List<MessageEntity>> = db.messageDao().observeDmThread(peerKeyHex)
 
     fun readersFor(messageId: String): Flow<List<ReadReceiptEntity>> = db.readReceiptDao().observeReadersFor(messageId)
+
+    // All reactions, grouped by message id, refreshed whenever any reaction changes.
+    private val _reactionsByMessage = MutableStateFlow<Map<String, List<ReactionEntity>>>(emptyMap())
+    val reactionsByMessage: StateFlow<Map<String, List<ReactionEntity>>> = _reactionsByMessage.asStateFlow()
+
+    init {
+        scope.launch {
+            db.reactionDao().observeAll().collect { all ->
+                _reactionsByMessage.value = all.groupBy { it.messageId }
+            }
+        }
+    }
+
+    /** Copies the message text to the system clipboard. */
+    fun copyMessageText(message: MessageEntity): String = message.body
+
+    /** Only the original sender can edit; no-op otherwise. Updates locally and, if we're connected,
+     * broadcasts the edit to the mesh so peers (and any future reconnects) see the same text. */
+    fun editMessage(message: MessageEntity, newText: String) {
+        if (!message.isMine || message.deleted) return
+        scope.launch {
+            db.messageDao().editText(message.id, newText)
+            service?.sendEdit(message.id, newText, if (message.type == "PUBLIC") null else message.peerPubKeyHex)
+        }
+    }
+
+    /** Only the original sender can delete; no-op otherwise. Soft-deletes locally (keeps the row so
+     * "message deleted" can still be shown) and broadcasts the delete to the mesh. */
+    fun deleteMessage(message: MessageEntity) {
+        if (!message.isMine) return
+        scope.launch {
+            db.messageDao().markDeleted(message.id)
+            service?.sendDelete(message.id, if (message.type == "PUBLIC") null else message.peerPubKeyHex)
+        }
+    }
+
+    /** Toggle: reacting with the same emoji again removes it. Anyone (not just the sender) can
+     * react. Recipient for the mesh packet is the DM peer, or broadcast for a public message. */
+    fun reactToMessage(message: MessageEntity, emoji: String) {
+        val myKey = myPublicKeyHex.value ?: return
+        val myNick = myNickname.value ?: myKey.take(8)
+        val recipientKeyHex = if (message.type == "PUBLIC") null else message.peerPubKeyHex
+        scope.launch {
+            val existing = db.reactionDao().forMessageOnce(message.id).firstOrNull { it.reactorPubKeyHex == myKey }
+            val removing = existing != null && existing.emoji == emoji
+            if (removing) {
+                db.reactionDao().remove(message.id, myKey)
+            } else {
+                db.reactionDao().upsert(ReactionEntity(message.id, myKey, myNick, emoji, System.currentTimeMillis()))
+            }
+            service?.sendReaction(message.id, emoji, added = !removing, recipientKeyHex)
+        }
+    }
 
     /** Marks a received message as read by us: sends a receipt (public = everyone learns; DM =
      * only the original sender) and records our own read locally so we don't resend it. No-op for
@@ -244,6 +307,30 @@ class MeshRepository private constructor(private val appContext: Context) {
                     _dmTypers.value = _dmTypers.value + (event.senderPubKeyHex to info)
                 }
             }
+            is MeshEvent.MessageEdited -> scope.launch {
+                // Only the original sender may edit their own message — verified against what we
+                // actually stored, not just trusting the claim in the packet.
+                if (db.messageDao().senderOf(event.originalMessageIdHex) == event.editorPubKeyHex) {
+                    db.messageDao().editText(event.originalMessageIdHex, event.newText)
+                }
+            }
+            is MeshEvent.MessageDeleted -> scope.launch {
+                if (db.messageDao().senderOf(event.originalMessageIdHex) == event.deleterPubKeyHex) {
+                    db.messageDao().markDeleted(event.originalMessageIdHex)
+                }
+            }
+            is MeshEvent.ReactionReceived -> scope.launch {
+                if (event.added) {
+                    db.reactionDao().upsert(
+                        ReactionEntity(
+                            event.originalMessageIdHex, event.reactorPubKeyHex, event.reactorNickname,
+                            event.emoji, event.timestamp
+                        )
+                    )
+                } else {
+                    db.reactionDao().remove(event.originalMessageIdHex, event.reactorPubKeyHex)
+                }
+            }
         }
     }
 
@@ -308,6 +395,7 @@ class MeshRepository private constructor(private val appContext: Context) {
     companion object {
         private const val PREF_RECEIVE_ATTACHMENTS = "receive_attachments"
         private const val PREF_TRACKING_BEACON = "tracking_beacon"
+        private const val PREF_FIND_FEATURE = "find_feature_enabled"
 
         @Volatile private var instance: MeshRepository? = null
 

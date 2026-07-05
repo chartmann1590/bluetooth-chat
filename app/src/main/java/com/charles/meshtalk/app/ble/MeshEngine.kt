@@ -42,6 +42,28 @@ sealed class MeshEvent {
         val senderNickname: String,
         val isPublic: Boolean
     ) : MeshEvent()
+
+    data class MessageEdited(
+        val originalMessageIdHex: String,
+        val editorPubKeyHex: String,
+        val newText: String,
+        val timestamp: Long
+    ) : MeshEvent()
+
+    data class MessageDeleted(
+        val originalMessageIdHex: String,
+        val deleterPubKeyHex: String,
+        val timestamp: Long
+    ) : MeshEvent()
+
+    data class ReactionReceived(
+        val originalMessageIdHex: String,
+        val reactorPubKeyHex: String,
+        val reactorNickname: String,
+        val emoji: String,
+        val added: Boolean,
+        val timestamp: Long
+    ) : MeshEvent()
 }
 
 /**
@@ -156,6 +178,73 @@ class MeshEngine(private val identity: Identity) {
         return PacketCodec.serialize(packet)
     }
 
+    /** `recipientSigningPubKeyHex` null = public feed edit (plaintext, signed); non-null = a DM
+     * edit, encrypted the same way the original DM was. Returns null if we don't know the DM
+     * recipient's agreement key yet. */
+    fun createEdit(targetMessageIdHex: String, newText: String, recipientSigningPubKeyHex: String?): ByteArray? {
+        val textBytes = newText.toByteArray(Charsets.UTF_8)
+        val plainPayload = ByteBuffer.allocate(16 + textBytes.size).apply {
+            put(targetMessageIdHex.hexToBytes())
+            put(textBytes)
+        }.array()
+        return buildActionPacket(PacketType.EDIT, plainPayload, recipientSigningPubKeyHex)
+    }
+
+    fun createDelete(targetMessageIdHex: String, recipientSigningPubKeyHex: String?): ByteArray? =
+        buildActionPacket(PacketType.DELETE, targetMessageIdHex.hexToBytes(), recipientSigningPubKeyHex)
+
+    fun createReaction(
+        targetMessageIdHex: String, emoji: String, added: Boolean, recipientSigningPubKeyHex: String?
+    ): ByteArray? {
+        val emojiBytes = emoji.toByteArray(Charsets.UTF_8)
+        val plainPayload = ByteBuffer.allocate(16 + 1 + emojiBytes.size).apply {
+            put(targetMessageIdHex.hexToBytes())
+            put(if (added) 1.toByte() else 0.toByte())
+            put(emojiBytes)
+        }.array()
+        return buildActionPacket(PacketType.REACTION, plainPayload, recipientSigningPubKeyHex)
+    }
+
+    /** Builds a signed action packet (EDIT/DELETE/REACTION): plaintext+broadcast for the public
+     * feed, or encrypted the same way a DM is for a specific recipient. Remembered in the replay
+     * cache like any durable content (a newly-connected peer should still learn about edits/
+     * deletes/reactions that happened while they were away). */
+    private fun buildActionPacket(type: PacketType, plainPayload: ByteArray, recipientSigningPubKeyHex: String?): ByteArray? {
+        val recipientKey: ByteArray
+        val payload: ByteArray
+        if (recipientSigningPubKeyHex == null) {
+            recipientKey = BROADCAST_KEY
+            payload = plainPayload
+        } else {
+            val recipientAgreementKey = agreementKeys[recipientSigningPubKeyHex] ?: return null
+            recipientKey = recipientSigningPubKeyHex.hexToBytes()
+            val sharedSecret = identity.deriveSharedSecret(recipientAgreementKey)
+            val aesKey = Aead.deriveKey(sharedSecret)
+            val ciphertext = Aead.encrypt(aesKey, plainPayload)
+            payload = ByteBuffer.allocate(32 + ciphertext.size).apply {
+                put(identity.agreementPublicKey)
+                put(ciphertext)
+            }.array()
+        }
+        val packet = PacketCodec.buildAndSign(identity, type, DEFAULT_TTL, recipientKey, payload)
+        val bytes = PacketCodec.serialize(packet)
+        remember(packet.messageIdHex, bytes)
+        return bytes
+    }
+
+    private fun decryptDmPayload(payload: ByteArray): ByteArray? {
+        val buf = ByteBuffer.wrap(payload)
+        val senderAgreementKey = ByteArray(32).also { buf.get(it) }
+        val ciphertext = ByteArray(buf.remaining()).also { buf.get(it) }
+        val sharedSecret = identity.deriveSharedSecret(senderAgreementKey)
+        val aesKey = Aead.deriveKey(sharedSecret)
+        return try {
+            Aead.decrypt(aesKey, ciphertext)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Result of processing an inbound raw (reassembled) packet. */
     data class Result(val event: MeshEvent?, val relayBytes: ByteArray?)
 
@@ -235,6 +324,50 @@ class MeshEngine(private val identity: Identity) {
                     val senderHex = packet.senderSigningPubKey.toHex()
                     MeshEvent.TypingReceived(senderHex, nicknames[senderHex] ?: senderHex.take(8), isPublic)
                 } else null // a DM typing signal meant for someone else; just relay
+            }
+            PacketType.EDIT -> {
+                val isPublic = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublic || isForMe) {
+                    val plain = if (isPublic) packet.payload else decryptDmPayload(packet.payload)
+                    if (plain == null) null else {
+                        val buf = ByteBuffer.wrap(plain)
+                        val targetId = ByteArray(16).also { buf.get(it) }
+                        val textBytes = ByteArray(buf.remaining()).also { buf.get(it) }
+                        MeshEvent.MessageEdited(
+                            targetId.toHex(), packet.senderSigningPubKey.toHex(),
+                            String(textBytes, Charsets.UTF_8), packet.timestamp
+                        )
+                    }
+                } else null
+            }
+            PacketType.DELETE -> {
+                val isPublic = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublic || isForMe) {
+                    val plain = if (isPublic) packet.payload else decryptDmPayload(packet.payload)
+                    if (plain == null) null else MeshEvent.MessageDeleted(
+                        plain.toHex(), packet.senderSigningPubKey.toHex(), packet.timestamp
+                    )
+                } else null
+            }
+            PacketType.REACTION -> {
+                val isPublic = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublic || isForMe) {
+                    val plain = if (isPublic) packet.payload else decryptDmPayload(packet.payload)
+                    if (plain == null) null else {
+                        val buf = ByteBuffer.wrap(plain)
+                        val targetId = ByteArray(16).also { buf.get(it) }
+                        val added = buf.get() == 1.toByte()
+                        val emojiBytes = ByteArray(buf.remaining()).also { buf.get(it) }
+                        val senderHex = packet.senderSigningPubKey.toHex()
+                        MeshEvent.ReactionReceived(
+                            targetId.toHex(), senderHex, nicknames[senderHex] ?: senderHex.take(8),
+                            String(emojiBytes, Charsets.UTF_8), added, packet.timestamp
+                        )
+                    }
+                } else null
             }
         }
 

@@ -18,6 +18,10 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 - **Typing indicators** — see "so-and-so is typing…" live in both the public feed and DM threads (ephemeral over-the-mesh signal, never stored or replayed to peers who reconnect later).
 - **On-device AI chat** — a private, fully-offline chat with Google's Gemma 4 model running locally via [LiteRT-LM](https://ai.google.dev/edge/litert), Google AI Edge's on-device LLM runtime. One-time ~2.6GB download, then works with zero connectivity forever after; nothing typed here ever goes over the mesh. Uses the on-device GPU delegate when available, falling back to CPU automatically.
 - **Bluetooth proximity finder** — when GPS and internet are both unavailable, find a nearby contact by raw Bluetooth signal strength (RSSI): a live signal-strength gauge and "Very close" → "Very far" estimate. Requires the other person to have their "Tracking beacon" enabled in Settings (which just advertises more frequently — anyone scanning can already see raw signal strength regardless).
+- **Bluetooth radar tab** — an opt-in "Find" tab (Settings toggle) showing a live map/radar of everyone currently reachable over BLE at once, each plotted with an arrow (a rolling "which way was the signal strongest" estimate as you turn) and an approximate distance from RSSI. The map backdrop is your rough area only, fetched once and cached offline for reuse with no connectivity.
+- **Offline map caching** — map images (for shared locations and the radar backdrop) are cached to disk the first time they're fetched, keyed by a coarse lat/lon grid cell, so viewing the same area again later works with no internet.
+- **On-device AI download during onboarding** — new installs are offered a one-tap opt-in to start the Gemma 4 download right away (continues in the background regardless of which screen you're on); skip it and download later from the AI tab instead.
+- **Message actions** — long-press any message (public feed or DM) to copy its text, react with an emoji, or — for your own messages — edit or delete it. Edits, deletes, and reactions all sync to everyone else on the mesh: only the original sender can edit/delete their own message (enforced both locally and by every recipient verifying the sender before applying it), and anyone can add or remove their own reaction.
 
 ## Screenshots
 
@@ -37,6 +41,16 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 <td><img src="docs/screenshots/find-bluetooth-proximity.png" width="220" alt="Find screen showing Bluetooth signal strength"><br><sub>Find: Bluetooth proximity</sub></td>
 <td><img src="docs/screenshots/ai-chat-gpu-response.png" width="220" alt="On-device AI chat with Gemma 4 response"><br><sub>On-device AI chat (Gemma 4)</sub></td>
 </tr>
+<tr>
+<td><img src="docs/screenshots/onboarding-ai-download-prompt.png" width="220" alt="Onboarding AI download opt-in prompt"><br><sub>Onboarding: AI download opt-in</sub></td>
+<td><img src="docs/screenshots/message-action-sheet.png" width="220" alt="Message action sheet with react/copy options"><br><sub>Message actions: react/copy</sub></td>
+<td><img src="docs/screenshots/message-reaction.png" width="220" alt="Message with an emoji reaction"><br><sub>Emoji reaction</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/message-edited.png" width="220" alt="Edited message with (edited) tag"><br><sub>Edited message</sub></td>
+<td><img src="docs/screenshots/message-deleted.png" width="220" alt="Deleted message placeholder"><br><sub>Deleted message</sub></td>
+<td></td>
+</tr>
 </table>
 
 ## How it works
@@ -50,7 +64,9 @@ Packets are signed, optionally encrypted, fragmented to fit the negotiated BLE M
 
 Because real-world BLE throughput is roughly 1–3 KB/s in this design, photos are automatically downscaled/recompressed and generic files are capped at a small size — large transfers are much more likely to span a connection drop than short ones, and there's no resume-on-failure.
 
-Typing indicators reuse the same signed-packet mesh transport as everything else, just with a short TTL and a separate ephemeral dedup cache — they're never persisted or replayed to a peer that reconnects later. The Bluetooth proximity finder reads the RSSI (signal strength) BLE already reports for each nearby advertiser and maps it to a rough "how close" estimate; it doesn't use GPS at all, so it keeps working with location services and mobile data both off. The on-device AI chat is a separate, local-only feature — it downloads and runs Google's Gemma 4 model directly on the phone via LiteRT-LM, and nothing typed into it is ever sent over the mesh or the internet after the initial model download.
+Typing indicators reuse the same signed-packet mesh transport as everything else, just with a short TTL and a separate ephemeral dedup cache — they're never persisted or replayed to a peer that reconnects later. The Bluetooth proximity finder (and the Find radar tab) reads the RSSI (signal strength) BLE already reports for each nearby advertiser and maps it to a rough "how close" estimate; it doesn't use GPS at all, so it keeps working with location services and mobile data both off. The radar's arrow direction is derived from a short rolling history of (compass heading, RSSI) samples — it's a "hunt for the strongest signal" aid, not real Bluetooth direction-finding hardware. The on-device AI chat is a separate, local-only feature — it downloads and runs Google's Gemma 4 model directly on the phone via LiteRT-LM, and nothing typed into it is ever sent over the mesh or the internet after the initial model download.
+
+Edits, deletes, and reactions are new packet types (`EDIT`/`DELETE`/`REACTION`) on the same signed mesh transport: public ones are plaintext+broadcast like a public message, DM ones are encrypted the same way the original DM was. Every recipient — not just the sender's own device — independently verifies that an edit/delete's claimed sender matches the message's actual original sender before applying it, so only the real author can change or remove their message.
 
 ## Requirements
 
@@ -72,9 +88,10 @@ app/src/main/java/com/charles/meshtalk/app/
 ├── ble/            BLE mesh transport: service, packet codec, mesh relay engine
 ├── crypto/         Identity keypair, signing, ECDH + AES-GCM
 ├── data/           Room database (contacts, messages)
-├── media/          Image compression, file size/type validation
+├── media/          Image compression, file/location prep, offline map cache
 ├── notifications/  DM notification channel
 ├── repository/     Bridges the BLE service + Room to the UI
+├── sensors/        Compass heading provider (for the Find radar tab)
 └── ui/             Jetpack Compose screens
 ```
 
@@ -86,3 +103,5 @@ app/src/main/java/com/charles/meshtalk/app/
 - The static map thumbnail for a shared location requires the sender to have internet connectivity at the moment they share it; the coordinates and "open in Maps" fallback always work regardless.
 - The on-device AI model is a one-time ~2.6GB download and needs a reasonably capable device (8GB+ RAM recommended) to run well; it's a separate local feature and isn't part of the mesh protocol.
 - Bluetooth signal strength is a rough distance proxy, not exact — walls, orientation, and interference all affect it. Anyone scanning nearby can see a device's raw signal strength; the "Tracking beacon" setting only controls how often that device advertises, not whether its signal is visible.
+- The radar tab's map backdrop needs internet the first time an area is viewed (then it's cached offline); peer arrows are relative signal estimates, not real bearings — there's no Bluetooth AoA/direction-finding hardware involved.
+- Editing is only supported for plain-text messages; photos, files, and locations can be deleted but not edited.
