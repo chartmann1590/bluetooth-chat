@@ -26,6 +26,7 @@ fun SettingsScreen(repository: MeshRepository) {
     val nickname by repository.myNickname.collectAsState()
     val pubKeyHex by repository.myPublicKeyHex.collectAsState()
     val receiveAttachments by repository.receiveAttachments.collectAsState()
+    val trackingBeacon by repository.trackingBeaconEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Settings") })
@@ -58,6 +59,29 @@ fun SettingsScreen(repository: MeshRepository) {
                 Switch(
                     checked = receiveAttachments,
                     onCheckedChange = { repository.setReceiveAttachments(it) }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Tracking beacon", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Advertise more frequently so nearby peers can find you with the Find " +
+                            "screen (Nearby tab) when GPS/internet aren't available — uses more " +
+                            "battery. Note: anyone scanning nearby can already see your signal " +
+                            "strength regardless of this setting; it only controls how often you " +
+                            "advertise.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = trackingBeacon,
+                    onCheckedChange = { repository.setTrackingBeaconEnabled(it) }
                 )
             }
         }

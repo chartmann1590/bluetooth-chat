@@ -36,6 +36,12 @@ sealed class MeshEvent {
         val readerNickname: String,
         val timestamp: Long
     ) : MeshEvent()
+
+    data class TypingReceived(
+        val senderPubKeyHex: String,
+        val senderNickname: String,
+        val isPublic: Boolean
+    ) : MeshEvent()
 }
 
 /**
@@ -48,7 +54,11 @@ class MeshEngine(private val identity: Identity) {
 
     companion object {
         const val DEFAULT_TTL = 6
+        // Typing indicators only need to reach immediate/near neighbors quickly; a short TTL
+        // bounds how far a duplicate can loop before dying out (see ephemeralDedup below).
+        const val TYPING_TTL = 2
         private const val CACHE_CAPACITY = 500
+        private const val EPHEMERAL_DEDUP_CAPACITY = 200
     }
 
     // Known contacts' agreement (X25519) public keys, learned from ANNOUNCE packets,
@@ -56,10 +66,18 @@ class MeshEngine(private val identity: Identity) {
     private val agreementKeys = Collections.synchronizedMap(HashMap<String, ByteArray>())
     private val nicknames = Collections.synchronizedMap(HashMap<String, String>())
 
-    // Bounded LRU of recently seen/sent raw packet bytes, keyed by messageId hex.
+    // Bounded LRU of recently seen/sent raw packet bytes, keyed by messageId hex. Replayed to
+    // newly-connected peers via packetsForNewPeer(), so only durable content goes in here.
     private val cache = Collections.synchronizedMap(object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?): Boolean =
             size > CACHE_CAPACITY
+    })
+
+    // Separate, smaller dedup-only record for ephemeral packets (currently just TYPING) that
+    // must never be replayed as stale history to a newly-connected peer.
+    private val ephemeralDedup = Collections.synchronizedMap(object : LinkedHashMap<String, Boolean>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
+            size > EPHEMERAL_DEDUP_CAPACITY
     })
 
     fun rememberContact(signingPubKeyHex: String, agreementPubKey: ByteArray, nickname: String) {
@@ -128,15 +146,30 @@ class MeshEngine(private val identity: Identity) {
         return bytes
     }
 
+    /** `recipientSigningPubKey` is [BROADCAST_KEY] for the public feed, or a specific peer's key
+     * for a DM thread. Not remembered in the replay cache — a stale "was typing" signal from
+     * minutes ago has no value to a newly-connected peer. */
+    fun createTypingIndicator(recipientSigningPubKey: ByteArray): ByteArray {
+        val packet = PacketCodec.buildAndSign(
+            identity, PacketType.TYPING, TYPING_TTL, recipientSigningPubKey, ByteArray(0)
+        )
+        return PacketCodec.serialize(packet)
+    }
+
     /** Result of processing an inbound raw (reassembled) packet. */
     data class Result(val event: MeshEvent?, val relayBytes: ByteArray?)
 
     fun handleIncoming(rawBytes: ByteArray): Result {
         val packet = PacketCodec.deserialize(rawBytes) ?: return Result(null, null)
-        if (cache.containsKey(packet.messageIdHex)) return Result(null, null) // already seen, drop
+        val alreadySeen = cache.containsKey(packet.messageIdHex) || ephemeralDedup.containsKey(packet.messageIdHex)
+        if (alreadySeen) return Result(null, null) // already seen, drop
         if (!PacketCodec.verify(packet)) return Result(null, null) // bad signature, drop
 
-        remember(packet.messageIdHex, rawBytes)
+        if (packet.type == PacketType.TYPING) {
+            ephemeralDedup[packet.messageIdHex] = true
+        } else {
+            remember(packet.messageIdHex, rawBytes)
+        }
 
         val event: MeshEvent? = when (packet.type) {
             PacketType.ANNOUNCE -> {
@@ -194,6 +227,14 @@ class MeshEngine(private val identity: Identity) {
                         packet.timestamp
                     )
                 } else null // a DM receipt meant for someone else; just relay
+            }
+            PacketType.TYPING -> {
+                val isPublic = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublic || isForMe) {
+                    val senderHex = packet.senderSigningPubKey.toHex()
+                    MeshEvent.TypingReceived(senderHex, nicknames[senderHex] ?: senderHex.take(8), isPublic)
+                } else null // a DM typing signal meant for someone else; just relay
             }
         }
 

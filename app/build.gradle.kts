@@ -28,10 +28,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
@@ -64,5 +60,14 @@ dependencies {
 
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
+    // On-device Gemma 4 inference (fully offline once the model file is downloaded).
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }

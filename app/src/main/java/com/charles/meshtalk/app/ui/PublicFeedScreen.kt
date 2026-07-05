@@ -38,7 +38,9 @@ import com.charles.meshtalk.app.ui.theme.SignalGreen
 fun PublicFeedScreen(repository: MeshRepository) {
     val messages by repository.publicFeed.collectAsState(initial = emptyList())
     val peerCount by repository.connectedPeerCount.collectAsState()
+    val typers by repository.publicTypers.collectAsState()
     var draft by remember { mutableStateOf("") }
+    var lastTypingSentAt by remember { mutableStateOf(0L) }
 
     LaunchedEffect(messages) {
         messages.filter { !it.isMine }.forEach { repository.markAsRead(it) }
@@ -57,6 +59,15 @@ fun PublicFeedScreen(repository: MeshRepository) {
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
             items(messages, key = { it.id }) { message -> PublicMessageRow(repository, message) }
         }
+        if (typers.isNotEmpty()) {
+            Text(
+                "${typers.values.joinToString(", ") { it.nickname }} " +
+                    (if (typers.size == 1) "is" else "are") + " typing…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -68,7 +79,14 @@ fun PublicFeedScreen(repository: MeshRepository) {
             )
             OutlinedTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = {
+                    draft = it
+                    val now = System.currentTimeMillis()
+                    if (it.isNotBlank() && now - lastTypingSentAt > 3000) {
+                        lastTypingSentAt = now
+                        repository.sendTypingIndicator(null)
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Broadcast...") }
             )

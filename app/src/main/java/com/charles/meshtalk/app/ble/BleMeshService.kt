@@ -79,6 +79,14 @@ class BleMeshService : Service() {
     private val _connectedPeerCount = MutableStateFlow(0)
     val connectedPeerCount: StateFlow<Int> = _connectedPeerCount.asStateFlow()
 
+    // Raw RSSI (dBm) per BLE address from scan results, resolved to peer identity via
+    // addressToPeerKey — powers the "Find" proximity screen. More negative = further away.
+    private val addressRssi = ConcurrentHashMap<String, Int>()
+    private val _peerRssi = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val peerRssi: StateFlow<Map<String, Int>> = _peerRssi.asStateFlow()
+
+    private var trackingBeaconEnabled = false
+
     private var identity: Identity? = null
     private var meshEngine: MeshEngine? = null
 
@@ -351,8 +359,15 @@ class BleMeshService : Service() {
     @SuppressLint("MissingPermission")
     private fun startAdvertising(adapter: android.bluetooth.BluetoothAdapter) {
         val advertiser = adapter.bluetoothLeAdvertiser ?: return
+        // Tracking beacon mode advertises as fast as the radio allows, at the cost of battery,
+        // so peers looking for us via the Find screen get more frequent/reliable RSSI updates.
+        val mode = if (trackingBeaconEnabled) {
+            AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+        } else {
+            AdvertiseSettings.ADVERTISE_MODE_BALANCED
+        }
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setAdvertiseMode(mode)
             .setConnectable(true)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .build()
@@ -361,6 +376,18 @@ class BleMeshService : Service() {
             .addServiceUuid(android.os.ParcelUuid(SERVICE_UUID))
             .build()
         advertiser.startAdvertising(settings, data, advertiseCallback)
+    }
+
+    /** Restarts advertising with a faster interval so this device is easier to locate via RSSI. */
+    @SuppressLint("MissingPermission")
+    fun setTrackingBeaconEnabled(enabled: Boolean) {
+        if (trackingBeaconEnabled == enabled) return
+        trackingBeaconEnabled = enabled
+        val bluetoothManager = getSystemService(BluetoothManager::class.java)
+        val adapter = bluetoothManager?.adapter ?: return
+        if (meshEngine == null) return // not started yet; startMesh() will pick up the new mode
+        adapter.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        startAdvertising(adapter)
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
@@ -381,6 +408,10 @@ class BleMeshService : Service() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device
+            // Record RSSI even for already-connected peers — this is the only signal the
+            // Find screen has, and connection state shouldn't stop it from updating.
+            addressRssi[device.address] = result.rssi
+            refreshPeerRssi()
             if (peripheralLinks.containsKey(device.address)) return
             if (!connectingAddresses.add(device.address)) return
             device.connectGatt(this@BleMeshService, false, gattClientCallback)
@@ -514,6 +545,7 @@ class BleMeshService : Service() {
         if (event is MeshEvent.PeerAnnounced) {
             addressToPeerKey[fromAddress] = event.signingPubKeyHex
             refreshPeerCount()
+            refreshPeerRssi()
         }
         event?.let { _events.tryEmit(it) }
         result.relayBytes?.let { relay -> broadcastToAllLinks(relay) }
@@ -544,6 +576,18 @@ class BleMeshService : Service() {
         _connectedPeerCount.value = distinct.size
     }
 
+    /** Resolves raw per-address RSSI to per-peer-identity RSSI for the Find screen; unresolved
+     * addresses (no ANNOUNCE seen yet) are dropped since there's no peer to attribute them to. */
+    private fun refreshPeerRssi() {
+        val result = HashMap<String, Int>()
+        addressRssi.forEach { (address, rssi) ->
+            val peerKey = addressToPeerKey[address] ?: return@forEach
+            val existing = result[peerKey]
+            if (existing == null || rssi > existing) result[peerKey] = rssi
+        }
+        _peerRssi.value = result
+    }
+
     /** Returns the sent message's id (hex) so callers can record it locally, or null on failure. */
     fun sendPublicContent(content: MessageContent): String? {
         val bytes = meshEngine?.createPublicMessage(content) ?: return null
@@ -566,6 +610,14 @@ class BleMeshService : Service() {
         val engine = meshEngine ?: return
         val recipientKey = recipientSigningPubKeyHex?.hexToBytes() ?: BROADCAST_KEY
         val bytes = engine.createReadReceipt(originalMessageIdHex, recipientKey)
+        broadcastToAllLinks(bytes)
+    }
+
+    /** [recipientSigningPubKeyHex] null means broadcast (public feed typing signal). */
+    fun sendTypingIndicator(recipientSigningPubKeyHex: String?) {
+        val engine = meshEngine ?: return
+        val recipientKey = recipientSigningPubKeyHex?.hexToBytes() ?: BROADCAST_KEY
+        val bytes = engine.createTypingIndicator(recipientKey)
         broadcastToAllLinks(bytes)
     }
 

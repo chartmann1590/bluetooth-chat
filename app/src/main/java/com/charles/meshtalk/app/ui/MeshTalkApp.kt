@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -27,8 +28,10 @@ import com.charles.meshtalk.app.repository.MeshRepository
 private const val ROUTE_PUBLIC = "public"
 private const val ROUTE_MESSAGES = "messages"
 private const val ROUTE_NEARBY = "nearby"
+private const val ROUTE_AI_CHAT = "ai_chat"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_DM_THREAD = "dm/{peerKey}"
+private const val ROUTE_FIND = "find/{peerKey}"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +59,7 @@ fun MeshTalkApp(
                     Triple(ROUTE_PUBLIC, "Public", Icons.Filled.Public),
                     Triple(ROUTE_MESSAGES, "Messages", Icons.Filled.Forum),
                     Triple(ROUTE_NEARBY, "Nearby", Icons.Filled.People),
+                    Triple(ROUTE_AI_CHAT, "AI", Icons.Filled.Psychology),
                     Triple(ROUTE_SETTINGS, "Settings", Icons.Filled.Settings),
                 ).forEach { (route, label, icon) ->
                     NavigationBarItem(
@@ -83,13 +87,20 @@ fun MeshTalkApp(
             composable(ROUTE_MESSAGES) { MessagesListScreen(repository, onOpenThread = { peerKey ->
                 navController.navigate("dm/$peerKey")
             }) }
-            composable(ROUTE_NEARBY) { NearbyScreen(repository, onMessagePeer = { peerKey ->
-                navController.navigate("dm/$peerKey")
-            }) }
+            composable(ROUTE_NEARBY) { NearbyScreen(
+                repository,
+                onMessagePeer = { peerKey -> navController.navigate("dm/$peerKey") },
+                onFindPeer = { peerKey -> navController.navigate("find/$peerKey") }
+            ) }
+            composable(ROUTE_AI_CHAT) { AiChatScreen() }
             composable(ROUTE_SETTINGS) { SettingsScreen(repository) }
             composable(ROUTE_DM_THREAD) { backStackEntry ->
                 val peerKey = backStackEntry.arguments?.getString("peerKey") ?: return@composable
                 DmThreadScreen(repository, peerKey)
+            }
+            composable(ROUTE_FIND) { backStackEntry ->
+                val peerKey = backStackEntry.arguments?.getString("peerKey") ?: return@composable
+                FindScreen(repository, peerKey)
             }
         }
     }

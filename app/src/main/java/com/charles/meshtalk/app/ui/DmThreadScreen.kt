@@ -36,9 +36,12 @@ import com.charles.meshtalk.app.ui.theme.SignalGreen
 fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
     val messages by repository.dmThread(peerKeyHex).collectAsState(initial = emptyList())
     val contacts by repository.contacts.collectAsState(initial = emptyList())
+    val dmTypers by repository.dmTypers.collectAsState()
     val nickname = contacts.firstOrNull { it.signingPubKeyHex == peerKeyHex }?.nickname ?: peerKeyHex.take(10)
     var draft by remember { mutableStateOf("") }
     var sendFailed by remember { mutableStateOf(false) }
+    var lastTypingSentAt by remember { mutableStateOf(0L) }
+    val peerIsTyping = dmTypers.containsKey(peerKeyHex)
 
     // While this thread is on screen, suppress notifications for DMs from this peer.
     DisposableEffect(peerKeyHex) {
@@ -54,6 +57,14 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
         TopAppBar(title = { Text(nickname, fontFamily = FontFamily.Monospace) })
         LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
             items(messages, key = { it.id }) { message -> DmMessageRow(repository, message) }
+        }
+        if (peerIsTyping) {
+            Text(
+                "$nickname is typing…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
         if (sendFailed) {
             Text(
@@ -79,7 +90,14 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
             )
             OutlinedTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = {
+                    draft = it
+                    val now = System.currentTimeMillis()
+                    if (it.isNotBlank() && now - lastTypingSentAt > 3000) {
+                        lastTypingSentAt = now
+                        repository.sendTypingIndicator(peerKeyHex)
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Message...") }
             )

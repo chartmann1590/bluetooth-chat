@@ -19,11 +19,14 @@ import com.charles.meshtalk.app.notifications.DmNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+data class TypingInfo(val nickname: String, val lastTypingAt: Long)
 
 /** Bridges [BleMeshService] (BLE transport + relay) and Room persistence to the UI layer. */
 class MeshRepository private constructor(private val appContext: Context) {
@@ -34,6 +37,40 @@ class MeshRepository private constructor(private val appContext: Context) {
     private var service: BleMeshService? = null
     private var pendingNickname: String? = null
     private var started = false
+
+    // Ephemeral (not persisted) — who's currently typing, expired a few seconds after their last signal.
+    private val _publicTypers = MutableStateFlow<Map<String, TypingInfo>>(emptyMap())
+    val publicTypers: StateFlow<Map<String, TypingInfo>> = _publicTypers.asStateFlow()
+    private val _dmTypers = MutableStateFlow<Map<String, TypingInfo>>(emptyMap())
+    val dmTypers: StateFlow<Map<String, TypingInfo>> = _dmTypers.asStateFlow()
+
+    init {
+        scope.launch {
+            while (true) {
+                delay(2000)
+                val cutoff = System.currentTimeMillis() - 4000
+                _publicTypers.value = _publicTypers.value.filterValues { it.lastTypingAt >= cutoff }
+                _dmTypers.value = _dmTypers.value.filterValues { it.lastTypingAt >= cutoff }
+            }
+        }
+    }
+
+    fun sendTypingIndicator(recipientPubKeyHex: String?) {
+        service?.sendTypingIndicator(recipientPubKeyHex)
+    }
+
+    // Per-peer live RSSI (dBm) for the Find screen; more negative = further away.
+    private val _peerRssi = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val peerRssi: StateFlow<Map<String, Int>> = _peerRssi.asStateFlow()
+
+    private val _trackingBeaconEnabled = MutableStateFlow(prefs.getBoolean(PREF_TRACKING_BEACON, false))
+    val trackingBeaconEnabled: StateFlow<Boolean> = _trackingBeaconEnabled.asStateFlow()
+
+    fun setTrackingBeaconEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_TRACKING_BEACON, enabled).apply()
+        _trackingBeaconEnabled.value = enabled
+        service?.setTrackingBeaconEnabled(enabled)
+    }
 
     // Local-only policy: still relayed to other mesh peers regardless of this setting (that's
     // just forwarding bytes), but this device won't store/display incoming photos or files.
@@ -83,11 +120,15 @@ class MeshRepository private constructor(private val appContext: Context) {
             val svc = (binder as BleMeshService.LocalBinder).getService()
             service = svc
             pendingNickname?.let { svc.startMesh(it) }
+            svc.setTrackingBeaconEnabled(_trackingBeaconEnabled.value)
             _myPublicKeyHex.value = svc.myPublicKeyHex()
             _myNickname.value = svc.myNickname()
 
             scope.launch {
                 svc.connectedPeerCount.collect { _connectedPeerCount.value = it }
+            }
+            scope.launch {
+                svc.peerRssi.collect { _peerRssi.value = it }
             }
             scope.launch {
                 svc.events.collect { event -> handleEvent(event) }
@@ -195,6 +236,14 @@ class MeshRepository private constructor(private val appContext: Context) {
                     )
                 )
             }
+            is MeshEvent.TypingReceived -> {
+                val info = TypingInfo(event.senderNickname, System.currentTimeMillis())
+                if (event.isPublic) {
+                    _publicTypers.value = _publicTypers.value + (event.senderPubKeyHex to info)
+                } else {
+                    _dmTypers.value = _dmTypers.value + (event.senderPubKeyHex to info)
+                }
+            }
         }
     }
 
@@ -258,6 +307,7 @@ class MeshRepository private constructor(private val appContext: Context) {
 
     companion object {
         private const val PREF_RECEIVE_ATTACHMENTS = "receive_attachments"
+        private const val PREF_TRACKING_BEACON = "tracking_beacon"
 
         @Volatile private var instance: MeshRepository? = null
 
