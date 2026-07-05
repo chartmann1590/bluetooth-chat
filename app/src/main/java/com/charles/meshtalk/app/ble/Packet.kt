@@ -13,7 +13,8 @@ enum class PacketType(val code: Byte) {
 /** Zero-filled recipient key used for broadcast (ANNOUNCE/PUBLIC) packets. */
 val BROADCAST_KEY: ByteArray = ByteArray(32)
 
-const val PACKET_VERSION: Byte = 1
+// v2: payloadLen widened from 2 to 4 bytes to carry compressed images/files.
+const val PACKET_VERSION: Byte = 2
 
 /**
  * A single mesh packet. `senderSigningPubKey` is the sender's persistent

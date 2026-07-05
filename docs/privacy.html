@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshTalk — Privacy Policy</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --surface: #161616; --surface-variant: #232323;
+    --text: #e6e6e6; --text-muted: #9a9a9a; --accent: #3ddc97;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa; --surface: #ffffff; --surface-variant: #f0f0f0;
+      --text: #171717; --text-muted: #5c5c5c; --accent: #1f9d6c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a; --surface: #161616; --surface-variant: #232323;
+    --text: #e6e6e6; --text-muted: #9a9a9a; --accent: #3ddc97;
+  }
+  :root[data-theme="light"] {
+    --bg: #fafafa; --surface: #ffffff; --surface-variant: #f0f0f0;
+    --text: #171717; --text-muted: #5c5c5c; --accent: #1f9d6c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 24px 96px; }
+  a { color: var(--accent); }
+  h1 { font-size: 2rem; margin-bottom: 4px; letter-spacing: -0.02em; }
+  .updated { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 40px; }
+  h2 { font-size: 1.15rem; margin: 36px 0 12px; color: var(--accent); }
+  .card {
+    background: var(--surface); border: 1px solid var(--surface-variant);
+    border-radius: 12px; padding: 20px 24px; margin: 16px 0;
+  }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 8px; }
+  .back { display: inline-block; margin-top: 40px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Privacy Policy</h1>
+  <p class="updated">MeshTalk for Android · Last updated 2026-07-05</p>
+
+  <div class="card">
+    <strong>Short version:</strong> MeshTalk has no servers, no accounts, and no analytics. Everything it stores lives only on your device. The only place your data travels is directly, over Bluetooth, to other nearby phones running MeshTalk — because that's how the app works.
+  </div>
+
+  <h2>What MeshTalk stores on your device</h2>
+  <ul>
+    <li><strong>Your identity keypair</strong> — generated on first launch, stored in the app's private storage. Never leaves your device except as a public key, which other MeshTalk users see when you're nearby.</li>
+    <li><strong>Your nickname</strong> — chosen during onboarding, shared with nearby peers so they know who's talking.</li>
+    <li><strong>Contacts</strong> — the public keys and nicknames of other MeshTalk users your phone has seen nearby, plus when you last saw them.</li>
+    <li><strong>Messages</strong> — public feed posts and direct messages you've sent or received, including any photos/files attached, stored locally in the app's database.</li>
+  </ul>
+  <p>None of this is uploaded anywhere. There is no MeshTalk server. Uninstalling the app removes all of it.</p>
+
+  <h2>What gets sent over Bluetooth, and to whom</h2>
+  <p>MeshTalk talks directly to other phones running the app within Bluetooth range — no internet connection is used or required. Two kinds of messages exist:</p>
+  <ul>
+    <li><strong>Public messages</strong> are readable by anyone on the mesh, by design — that's the point of a public feed. They're cryptographically signed so recipients can verify who sent them, but not encrypted.</li>
+    <li><strong>Direct messages</strong> are end-to-end encrypted (X25519 + AES-GCM) so only the intended recipient can read the content. Other phones may still relay the encrypted bytes to help the message reach its destination, but can't decrypt them.</li>
+  </ul>
+  <p>Because this is a mesh network, your phone also relays other users' messages toward their destination — this is how range is extended beyond a single Bluetooth connection. Relaying only forwards already-encrypted or already-public bytes; your phone doesn't read the content of messages that aren't addressed to it.</p>
+
+  <h2>Attachments</h2>
+  <p>Photos and files you send are compressed/size-capped and transmitted the same way as text — public ones are visible to the mesh, DM ones are encrypted. You can turn off <em>receiving</em> attachments in Settings; when off, your device still relays other people's attachment data for the mesh, it just doesn't store or display it for you.</p>
+
+  <h2>Permissions MeshTalk requests, and why</h2>
+  <ul>
+    <li><strong>Bluetooth (scan/advertise/connect)</strong> — required to find and talk to nearby phones; this is the entire mechanism of the app.</li>
+    <li><strong>Nearby devices / location (older Android versions)</strong> — Android requires this permission for Bluetooth LE scanning on some OS versions. MeshTalk does not use GPS or any other location source, and does not read or store your location.</li>
+    <li><strong>Notifications</strong> — used to alert you to new direct messages and to show the ongoing "mesh is running" status notification required for background operation.</li>
+    <li><strong>Battery optimization exemption (optional)</strong> — improves reliability of background message delivery; you can decline this and use the app normally.</li>
+  </ul>
+
+  <h2>Third parties</h2>
+  <p>MeshTalk does not integrate any analytics, advertising, or crash-reporting SDKs, and does not communicate with any server operated by the developer or anyone else.</p>
+
+  <h2>Children's privacy</h2>
+  <p>MeshTalk does not knowingly collect any information from anyone, of any age, since it doesn't collect information at all in the traditional sense — everything described above stays on-device or goes directly to other nearby users' devices.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the updated version will be posted at this same address with a new "last updated" date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or concerns can be raised via <a href="https://github.com/chartmann1590/bluetooth-chat/issues">GitHub Issues</a> on the project repository.</p>
+
+  <a class="back" href="index.html">← Back to MeshTalk</a>
+</div>
+</body>
+</html>

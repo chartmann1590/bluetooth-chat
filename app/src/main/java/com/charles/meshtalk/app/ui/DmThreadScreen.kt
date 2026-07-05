@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.charles.meshtalk.app.AppVisibility
 import com.charles.meshtalk.app.data.MessageEntity
 import com.charles.meshtalk.app.repository.MeshRepository
 import com.charles.meshtalk.app.ui.theme.SignalGreen
@@ -36,6 +38,12 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
     val nickname = contacts.firstOrNull { it.signingPubKeyHex == peerKeyHex }?.nickname ?: peerKeyHex.take(10)
     var draft by remember { mutableStateOf("") }
     var sendFailed by remember { mutableStateOf(false) }
+
+    // While this thread is on screen, suppress notifications for DMs from this peer.
+    DisposableEffect(peerKeyHex) {
+        AppVisibility.openDmPeerKeyHex = peerKeyHex
+        onDispose { AppVisibility.openDmPeerKeyHex = null }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text(nickname, fontFamily = FontFamily.Monospace) })
@@ -53,6 +61,14 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            AttachButtons(
+                onImagePicked = { bytes, mime ->
+                    sendFailed = !repository.sendDirectImage(peerKeyHex, bytes, mime)
+                },
+                onFilePicked = { bytes, mime, filename ->
+                    sendFailed = !repository.sendDirectFile(peerKeyHex, bytes, mime, filename)
+                }
+            )
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -88,6 +104,6 @@ private fun DmMessageRow(message: MessageEntity) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(message.body, modifier = Modifier.padding(top = 2.dp))
+        MessageContentBody(message)
     }
 }

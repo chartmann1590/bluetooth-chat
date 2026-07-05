@@ -6,12 +6,15 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.core.content.ContextCompat
+import com.charles.meshtalk.app.AppVisibility
 import com.charles.meshtalk.app.ble.BleMeshService
 import com.charles.meshtalk.app.ble.MeshEvent
+import com.charles.meshtalk.app.ble.MessageContent
 import com.charles.meshtalk.app.crypto.toHex
 import com.charles.meshtalk.app.data.AppDatabase
 import com.charles.meshtalk.app.data.ContactEntity
 import com.charles.meshtalk.app.data.MessageEntity
+import com.charles.meshtalk.app.notifications.DmNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,10 +28,21 @@ import kotlinx.coroutines.launch
 class MeshRepository private constructor(private val appContext: Context) {
     private val db = AppDatabase.get(appContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val prefs = appContext.getSharedPreferences("meshtalk_prefs", Context.MODE_PRIVATE)
 
     private var service: BleMeshService? = null
     private var pendingNickname: String? = null
     private var started = false
+
+    // Local-only policy: still relayed to other mesh peers regardless of this setting (that's
+    // just forwarding bytes), but this device won't store/display incoming photos or files.
+    private val _receiveAttachments = MutableStateFlow(prefs.getBoolean(PREF_RECEIVE_ATTACHMENTS, true))
+    val receiveAttachments: StateFlow<Boolean> = _receiveAttachments.asStateFlow()
+
+    fun setReceiveAttachments(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_RECEIVE_ATTACHMENTS, enabled).apply()
+        _receiveAttachments.value = enabled
+    }
 
     private val _connectedPeerCount = MutableStateFlow(0)
     val connectedPeerCount: StateFlow<Int> = _connectedPeerCount.asStateFlow()
@@ -76,34 +90,41 @@ class MeshRepository private constructor(private val appContext: Context) {
         appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)
     }
 
-    fun sendPublicMessage(text: String) {
+    fun sendPublicMessage(text: String) = sendPublicContent(MessageContent.Text(text))
+    fun sendPublicImage(bytes: ByteArray, mime: String = "image/jpeg") = sendPublicContent(MessageContent.Image(bytes, mime))
+    fun sendPublicFile(bytes: ByteArray, mime: String, filename: String) =
+        sendPublicContent(MessageContent.File(bytes, mime, filename))
+
+    private fun sendPublicContent(content: MessageContent) {
         val svc = service ?: return
         val myKey = svc.myPublicKeyHex() ?: return
         val myNick = svc.myNickname() ?: return
-        val id = svc.sendPublicMessage(text) ?: return
+        val id = svc.sendPublicContent(content) ?: return
         scope.launch {
             db.messageDao().insert(
-                MessageEntity(
-                    id = id, type = "PUBLIC", senderPubKeyHex = myKey, senderNickname = myNick,
-                    peerPubKeyHex = null, body = text, timestamp = System.currentTimeMillis(),
-                    isMine = true, delivered = true
-                )
+                entityFor(id, "PUBLIC", myKey, myNick, null, content, System.currentTimeMillis(), isMine = true)
             )
         }
     }
 
     /** Returns false if the recipient hasn't been seen on the mesh yet (no known agreement key). */
-    fun sendDirectMessage(recipientPubKeyHex: String, text: String): Boolean {
+    fun sendDirectMessage(recipientPubKeyHex: String, text: String): Boolean =
+        sendDirectContent(recipientPubKeyHex, MessageContent.Text(text))
+
+    fun sendDirectImage(recipientPubKeyHex: String, bytes: ByteArray, mime: String = "image/jpeg"): Boolean =
+        sendDirectContent(recipientPubKeyHex, MessageContent.Image(bytes, mime))
+
+    fun sendDirectFile(recipientPubKeyHex: String, bytes: ByteArray, mime: String, filename: String): Boolean =
+        sendDirectContent(recipientPubKeyHex, MessageContent.File(bytes, mime, filename))
+
+    private fun sendDirectContent(recipientPubKeyHex: String, content: MessageContent): Boolean {
         val svc = service ?: return false
         val myKey = svc.myPublicKeyHex() ?: return false
-        val id = svc.sendDirectMessage(recipientPubKeyHex, text) ?: return false
+        val myNick = svc.myNickname() ?: myKey.take(8)
+        val id = svc.sendDirectContent(recipientPubKeyHex, content) ?: return false
         scope.launch {
             db.messageDao().insert(
-                MessageEntity(
-                    id = id, type = "DM", senderPubKeyHex = myKey, senderNickname = svc.myNickname() ?: myKey.take(8),
-                    peerPubKeyHex = recipientPubKeyHex, body = text, timestamp = System.currentTimeMillis(),
-                    isMine = true, delivered = true
-                )
+                entityFor(id, "DM", myKey, myNick, recipientPubKeyHex, content, System.currentTimeMillis(), isMine = true)
             )
         }
         return true
@@ -123,10 +144,9 @@ class MeshRepository private constructor(private val appContext: Context) {
             }
             is MeshEvent.PublicMessageReceived -> scope.launch {
                 db.messageDao().insert(
-                    MessageEntity(
-                        id = event.messageIdHex, type = "PUBLIC", senderPubKeyHex = event.senderPubKeyHex,
-                        senderNickname = event.senderNickname, peerPubKeyHex = null, body = event.body,
-                        timestamp = event.timestamp, isMine = false, delivered = true
+                    entityFor(
+                        event.messageIdHex, "PUBLIC", event.senderPubKeyHex, event.senderNickname,
+                        null, applyAttachmentPolicy(event.content), event.timestamp, isMine = false
                     )
                 )
             }
@@ -134,17 +154,68 @@ class MeshRepository private constructor(private val appContext: Context) {
                 val nickname = db.contactDao().getByKey(event.senderPubKeyHex)?.nickname
                     ?: event.senderPubKeyHex.take(8)
                 db.messageDao().insert(
-                    MessageEntity(
-                        id = event.messageIdHex, type = "DM", senderPubKeyHex = event.senderPubKeyHex,
-                        senderNickname = nickname, peerPubKeyHex = event.senderPubKeyHex, body = event.body,
-                        timestamp = event.timestamp, isMine = false, delivered = true
+                    entityFor(
+                        event.messageIdHex, "DM", event.senderPubKeyHex, nickname,
+                        event.senderPubKeyHex, applyAttachmentPolicy(event.content), event.timestamp, isMine = false
                     )
                 )
+                if (!AppVisibility.isViewingDmThread(event.senderPubKeyHex)) {
+                    DmNotifier.notifyNewDm(appContext, event.senderPubKeyHex, nickname, previewFor(event.content))
+                }
             }
         }
     }
 
+    /** When attachments are disabled, incoming photos/files are replaced with a text placeholder
+     * before being stored — this device simply doesn't keep the bytes, but the sender's message
+     * is still relayed on to other mesh peers regardless (that happens at the BLE layer). */
+    private fun applyAttachmentPolicy(content: MessageContent): MessageContent {
+        if (_receiveAttachments.value) return content
+        return when (content) {
+            is MessageContent.Image -> MessageContent.Text("📷 Photo (not received — attachments disabled in Settings)")
+            is MessageContent.File -> MessageContent.Text("📎 ${content.filename} (not received — attachments disabled in Settings)")
+            is MessageContent.Text -> content
+        }
+    }
+
+    private fun previewFor(content: MessageContent): String = when (content) {
+        is MessageContent.Text -> content.body
+        is MessageContent.Image -> "📷 Photo"
+        is MessageContent.File -> "📎 ${content.filename}"
+    }
+
+    private fun entityFor(
+        id: String,
+        type: String,
+        senderKeyHex: String,
+        senderNickname: String,
+        peerKeyHex: String?,
+        content: MessageContent,
+        timestamp: Long,
+        isMine: Boolean
+    ): MessageEntity = when (content) {
+        is MessageContent.Text -> MessageEntity(
+            id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
+            peerPubKeyHex = peerKeyHex, contentType = "TEXT", body = content.body,
+            timestamp = timestamp, isMine = isMine, delivered = true
+        )
+        is MessageContent.Image -> MessageEntity(
+            id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
+            peerPubKeyHex = peerKeyHex, contentType = "IMAGE", body = "Photo",
+            mediaBytes = content.bytes, mediaMimeType = content.mime,
+            timestamp = timestamp, isMine = isMine, delivered = true
+        )
+        is MessageContent.File -> MessageEntity(
+            id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
+            peerPubKeyHex = peerKeyHex, contentType = "FILE", body = content.filename,
+            mediaBytes = content.bytes, mediaMimeType = content.mime, mediaFilename = content.filename,
+            timestamp = timestamp, isMine = isMine, delivered = true
+        )
+    }
+
     companion object {
+        private const val PREF_RECEIVE_ATTACHMENTS = "receive_attachments"
+
         @Volatile private var instance: MeshRepository? = null
 
         fun get(context: Context): MeshRepository =

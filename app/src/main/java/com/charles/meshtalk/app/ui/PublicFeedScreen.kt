@@ -56,6 +56,10 @@ fun PublicFeedScreen(repository: MeshRepository) {
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            AttachButtons(
+                onImagePicked = { bytes, mime -> repository.sendPublicImage(bytes, mime) },
+                onFilePicked = { bytes, mime, filename -> repository.sendPublicFile(bytes, mime, filename) }
+            )
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -91,7 +95,7 @@ private fun PublicMessageRow(message: MessageEntity) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(message.body, modifier = Modifier.padding(top = 2.dp))
+        MessageContentBody(message)
     }
 }
 

@@ -8,13 +8,16 @@ import java.util.UUID
 /**
  * Binary wire format for a [Packet]:
  * version(1) type(1) ttl(1) messageId(16) timestamp(8) sender(32) recipient(32)
- * payloadLen(2) payload(N) signature(64)
+ * payloadLen(4) payload(N) signature(64)
+ *
+ * payloadLen is 4 bytes (not 2) to accommodate compressed-image/file payloads up
+ * to ~200KB, well beyond a 2-byte length's ~64KB ceiling.
  *
  * The signature covers everything before it.
  */
 object PacketCodec {
     private const val SIGNATURE_BYTES = 64
-    const val HEADER_BYTES = 1 + 1 + 1 + 16 + 8 + 32 + 32 + 2
+    const val HEADER_BYTES = 1 + 1 + 1 + 16 + 8 + 32 + 32 + 4
 
     fun buildAndSign(
         identity: Identity,
@@ -59,7 +62,7 @@ object PacketCodec {
         recipient: ByteArray,
         payload: ByteArray
     ): ByteArray {
-        val buffer = ByteBuffer.allocate(HEADER_BYTES - 2 /* len read separately below */ + 2 + payload.size)
+        val buffer = ByteBuffer.allocate(HEADER_BYTES + payload.size)
         buffer.put(PACKET_VERSION)
         buffer.put(type.code)
         buffer.put(ttl.toByte())
@@ -67,7 +70,7 @@ object PacketCodec {
         buffer.putLong(timestamp)
         buffer.put(sender)
         buffer.put(recipient)
-        buffer.putShort(payload.size.toShort())
+        buffer.putInt(payload.size)
         buffer.put(payload)
         return buffer.array()
     }
@@ -94,8 +97,8 @@ object PacketCodec {
         val timestamp = buffer.long
         val sender = ByteArray(32).also { buffer.get(it) }
         val recipient = ByteArray(32).also { buffer.get(it) }
-        val payloadLen = buffer.short.toInt() and 0xFFFF
-        if (buffer.remaining() < payloadLen + SIGNATURE_BYTES) return null
+        val payloadLen = buffer.int
+        if (payloadLen < 0 || buffer.remaining() < payloadLen + SIGNATURE_BYTES) return null
         val payload = ByteArray(payloadLen).also { buffer.get(it) }
         val signature = ByteArray(SIGNATURE_BYTES).also { buffer.get(it) }
 

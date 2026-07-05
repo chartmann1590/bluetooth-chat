@@ -19,14 +19,14 @@ sealed class MeshEvent {
         val senderPubKeyHex: String,
         val senderNickname: String,
         val messageIdHex: String,
-        val body: String,
+        val content: MessageContent,
         val timestamp: Long
     ) : MeshEvent()
 
     data class DirectMessageReceived(
         val senderPubKeyHex: String,
         val messageIdHex: String,
-        val body: String,
+        val content: MessageContent,
         val timestamp: Long
     ) : MeshEvent()
 }
@@ -80,9 +80,9 @@ class MeshEngine(private val identity: Identity) {
         return bytes
     }
 
-    fun createPublicMessage(text: String): ByteArray {
+    fun createPublicMessage(content: MessageContent): ByteArray {
         val packet = PacketCodec.buildAndSign(
-            identity, PacketType.PUBLIC, DEFAULT_TTL, BROADCAST_KEY, text.toByteArray(Charsets.UTF_8)
+            identity, PacketType.PUBLIC, DEFAULT_TTL, BROADCAST_KEY, MessageContentCodec.encode(content)
         )
         val bytes = PacketCodec.serialize(packet)
         remember(packet.messageIdHex, bytes)
@@ -90,12 +90,12 @@ class MeshEngine(private val identity: Identity) {
     }
 
     /** Returns null if we don't yet know the recipient's agreement key (no ANNOUNCE seen from them). */
-    fun createDirectMessage(recipientSigningPubKeyHex: String, text: String): ByteArray? {
+    fun createDirectMessage(recipientSigningPubKeyHex: String, content: MessageContent): ByteArray? {
         val recipientAgreementKey = agreementKeys[recipientSigningPubKeyHex] ?: return null
         val recipientSigningKey = recipientSigningPubKeyHex.hexToBytes()
         val sharedSecret = identity.deriveSharedSecret(recipientAgreementKey)
         val aesKey = Aead.deriveKey(sharedSecret)
-        val ciphertext = Aead.encrypt(aesKey, text.toByteArray(Charsets.UTF_8))
+        val ciphertext = Aead.encrypt(aesKey, MessageContentCodec.encode(content))
 
         val payload = ByteBuffer.allocate(32 + ciphertext.size)
         payload.put(identity.agreementPublicKey)
@@ -130,11 +130,12 @@ class MeshEngine(private val identity: Identity) {
             }
             PacketType.PUBLIC -> {
                 val senderHex = packet.senderSigningPubKey.toHex()
-                MeshEvent.PublicMessageReceived(
+                val content = MessageContentCodec.decode(packet.payload)
+                if (content == null) null else MeshEvent.PublicMessageReceived(
                     senderHex,
                     nicknames[senderHex] ?: senderHex.take(8),
                     packet.messageIdHex,
-                    String(packet.payload, Charsets.UTF_8),
+                    content,
                     packet.timestamp
                 )
             }
@@ -147,10 +148,11 @@ class MeshEngine(private val identity: Identity) {
                     val aesKey = Aead.deriveKey(sharedSecret)
                     try {
                         val plaintext = Aead.decrypt(aesKey, ciphertext)
-                        MeshEvent.DirectMessageReceived(
+                        val content = MessageContentCodec.decode(plaintext)
+                        if (content == null) null else MeshEvent.DirectMessageReceived(
                             packet.senderSigningPubKey.toHex(),
                             packet.messageIdHex,
-                            String(plaintext, Charsets.UTF_8),
+                            content,
                             packet.timestamp
                         )
                     } catch (e: Exception) {

@@ -32,6 +32,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.charles.meshtalk.app.MainActivity
 import com.charles.meshtalk.app.crypto.Identity
+import com.charles.meshtalk.app.hasAllPermissions
+import com.charles.meshtalk.app.requiredBluetoothPermissions
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -58,6 +60,10 @@ class BleMeshService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "mesh_service"
         private const val NOTIFICATION_ID = 1
         private const val DEFAULT_CHUNK_PAYLOAD = 150
+        // Bluetooth Core Spec caps a GATT attribute value at 512 bytes regardless of ATT MTU;
+        // notifyCharacteristicChanged throws IllegalArgumentException (crashing the process,
+        // since it's called from a callback with no surrounding try/catch) if exceeded.
+        private const val MAX_ATTRIBUTE_VALUE_BYTES = 512
     }
 
     private val binder = LocalBinder()
@@ -104,6 +110,12 @@ class BleMeshService : Service() {
     private val peripheralLinks = ConcurrentHashMap<String, PeripheralLink>() // gatt clients we opened
     private val connectingAddresses = ConcurrentHashMap.newKeySet<String>()
 
+    // BLE address rotation means one physical peer can hold two simultaneous connections
+    // (one where it's central, one where it's peripheral) under two different addresses.
+    // Once a link's first ANNOUNCE arrives we learn its real identity, so peer counting can
+    // dedupe by that instead of by raw address.
+    private val addressToPeerKey = ConcurrentHashMap<String, String>()
+
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
@@ -139,6 +151,18 @@ class BleMeshService : Service() {
     override fun onDestroy() {
         stopMesh()
         super.onDestroy()
+    }
+
+    // If the OS kills this service (e.g. low memory) while the app isn't in the foreground,
+    // START_STICKY gets it restarted with a null intent; self-resume from the persisted
+    // identity so the mesh keeps running without needing the Activity to relaunch first.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (meshEngine == null && Identity.exists(applicationContext) &&
+            hasAllPermissions(applicationContext, requiredBluetoothPermissions())
+        ) {
+            startMesh("")
+        }
+        return START_STICKY
     }
 
     /** Idempotent: call once identity/nickname and Bluetooth permissions are ready. */
@@ -209,6 +233,7 @@ class BleMeshService : Service() {
                 refreshPeerCount()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 centralLinks.remove(device.address)
+                addressToPeerKey.remove(device.address)
                 refreshPeerCount()
             }
         }
@@ -235,7 +260,7 @@ class BleMeshService : Service() {
                 Log.w(TAG, "onCharacteristicWriteRequest: no centralLink for ${device.address}")
                 return
             }
-            onChunkReceived(value, link.reassembler)
+            onChunkReceived(value, link.reassembler, device.address)
         }
 
         @SuppressLint("MissingPermission")
@@ -272,7 +297,8 @@ class BleMeshService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun enqueueToCentral(link: CentralLink, packetBytes: ByteArray) {
-        val chunkSize = (link.mtu - 3).takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
+        val chunkSize = (link.mtu - 3).coerceAtMost(MAX_ATTRIBUTE_VALUE_BYTES)
+            .takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
         // messageId sits at a fixed offset in the wire format: version(1)+type(1)+ttl(1) then 16 bytes of id.
         val packetId = packetBytes.copyOfRange(3, 19)
         val chunks = Fragmenter.fragment(packetId, packetBytes, chunkSize)
@@ -300,6 +326,7 @@ class BleMeshService : Service() {
         }
         Log.d(TAG, "sendNextQueuedChunk: notifying ${link.device.address} with ${next.size} bytes")
         val char = characteristic ?: return
+        try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // API 33+: value is passed explicitly per-call, no shared mutable characteristic state.
             val status = gattServer?.notifyCharacteristicChanged(link.device, char, false, next)
@@ -310,6 +337,9 @@ class BleMeshService : Service() {
                 val ok = gattServer?.notifyCharacteristicChanged(link.device, char, false)
                 Log.d(TAG, "sendNextQueuedChunk: notifyCharacteristicChanged returned $ok")
             }
+        }
+        } catch (e: Exception) {
+            Log.w(TAG, "sendNextQueuedChunk: notify failed, dropping chunk: ${e.message}")
         }
     }
 
@@ -367,10 +397,14 @@ class BleMeshService : Service() {
                 BluetoothProfile.STATE_CONNECTED -> {
                     peripheralLinks[gatt.device.address] = PeripheralLink(gatt)
                     gatt.requestMtu(512)
+                    // Prioritize throughput/latency over the connection's power usage: multi-chunk
+                    // image/file transfers are much more likely to span a disconnect otherwise.
+                    gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     peripheralLinks.remove(gatt.device.address)
                     connectingAddresses.remove(gatt.device.address)
+                    addressToPeerKey.remove(gatt.device.address)
                     gatt.close()
                     refreshPeerCount()
                 }
@@ -408,12 +442,12 @@ class BleMeshService : Service() {
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val link = peripheralLinks[gatt.device.address] ?: return
-            onChunkReceived(characteristic.value ?: return, link.reassembler)
+            onChunkReceived(characteristic.value ?: return, link.reassembler, gatt.device.address)
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
             val link = peripheralLinks[gatt.device.address] ?: return
-            onChunkReceived(value, link.reassembler)
+            onChunkReceived(value, link.reassembler, gatt.device.address)
         }
 
         @SuppressLint("MissingPermission")
@@ -426,7 +460,8 @@ class BleMeshService : Service() {
     @SuppressLint("MissingPermission")
     private fun enqueueToPeripheral(gatt: BluetoothGatt, char: BluetoothGattCharacteristic, packetBytes: ByteArray) {
         val link = peripheralLinks[gatt.device.address] ?: return
-        val chunkSize = (link.mtu - 3).takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
+        val chunkSize = (link.mtu - 3).coerceAtMost(MAX_ATTRIBUTE_VALUE_BYTES)
+            .takeIf { it > Fragmenter.CHUNK_HEADER_BYTES + 4 } ?: DEFAULT_CHUNK_PAYLOAD
         val packetId = packetBytes.copyOfRange(3, 19)
         val chunks = Fragmenter.fragment(packetId, packetBytes, chunkSize)
         synchronized(link.queue) {
@@ -445,10 +480,14 @@ class BleMeshService : Service() {
             }
             link.queue.busy = true
             Log.d(TAG, "sendNextQueuedChunkToPeripheral: writing ${next.size} bytes to ${gatt.device.address}")
-            char.setValue(next)
-            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            val ok = gatt.writeCharacteristic(char)
-            Log.d(TAG, "sendNextQueuedChunkToPeripheral: writeCharacteristic returned $ok")
+            try {
+                char.setValue(next)
+                char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                val ok = gatt.writeCharacteristic(char)
+                Log.d(TAG, "sendNextQueuedChunkToPeripheral: writeCharacteristic returned $ok")
+            } catch (e: Exception) {
+                Log.w(TAG, "sendNextQueuedChunkToPeripheral: write failed, dropping chunk: ${e.message}")
+            }
         }
     }
 
@@ -456,7 +495,7 @@ class BleMeshService : Service() {
     // Shared incoming/outgoing packet handling
     // ---------------------------------------------------------------------
 
-    private fun onChunkReceived(chunk: ByteArray, reassembler: Reassembler) {
+    private fun onChunkReceived(chunk: ByteArray, reassembler: Reassembler, fromAddress: String) {
         Log.d(TAG, "onChunkReceived: ${chunk.size} bytes")
         val full = reassembler.addChunk(chunk)
         if (full == null) {
@@ -470,7 +509,12 @@ class BleMeshService : Service() {
             return
         }
         Log.d(TAG, "onChunkReceived: event=${result.event} relay=${result.relayBytes != null}")
-        result.event?.let { _events.tryEmit(it) }
+        val event = result.event
+        if (event is MeshEvent.PeerAnnounced) {
+            addressToPeerKey[fromAddress] = event.signingPubKeyHex
+            refreshPeerCount()
+        }
+        event?.let { _events.tryEmit(it) }
         result.relayBytes?.let { relay -> broadcastToAllLinks(relay) }
     }
 
@@ -489,22 +533,26 @@ class BleMeshService : Service() {
     }
 
     private fun refreshPeerCount() {
+        // Resolve each connected address to its peer identity where known (learned from
+        // ANNOUNCE); addresses with no known identity yet fall back to counting as themselves.
+        // This collapses the same physical peer's two role-based connections into one.
         val distinct = HashSet<String>()
-        distinct.addAll(centralLinks.keys)
-        distinct.addAll(peripheralLinks.keys)
+        (centralLinks.keys.asSequence() + peripheralLinks.keys.asSequence()).forEach { address ->
+            distinct.add(addressToPeerKey[address] ?: address)
+        }
         _connectedPeerCount.value = distinct.size
     }
 
     /** Returns the sent message's id (hex) so callers can record it locally, or null on failure. */
-    fun sendPublicMessage(text: String): String? {
-        val bytes = meshEngine?.createPublicMessage(text) ?: return null
+    fun sendPublicContent(content: MessageContent): String? {
+        val bytes = meshEngine?.createPublicMessage(content) ?: return null
         broadcastToAllLinks(bytes)
         return PacketCodec.deserialize(bytes)?.messageIdHex
     }
 
     /** Returns null if we don't yet know the recipient's agreement key (no ANNOUNCE seen yet). */
-    fun sendDirectMessage(recipientSigningPubKeyHex: String, text: String): String? {
-        val bytes = meshEngine?.createDirectMessage(recipientSigningPubKeyHex, text) ?: return null
+    fun sendDirectContent(recipientSigningPubKeyHex: String, content: MessageContent): String? {
+        val bytes = meshEngine?.createDirectMessage(recipientSigningPubKeyHex, content) ?: return null
         broadcastToAllLinks(bytes)
         return PacketCodec.deserialize(bytes)?.messageIdHex
     }
