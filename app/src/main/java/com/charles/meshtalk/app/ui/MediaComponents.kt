@@ -14,9 +14,11 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,9 +73,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Renders a message's body: plain text, an inline decoded image, a file chip, or a location card. */
+/** Renders a message's body: plain text, an inline decoded image, a file chip, or a location card.
+ * [onLongPress], when provided, fires on a long-press anywhere on the content — needed because a
+ * photo has its own tap target (to view full screen) that would otherwise swallow a long-press
+ * meant for the surrounding message's action sheet before it ever reaches an outer long-press
+ * listener. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageContentBody(message: MessageEntity) {
+fun MessageContentBody(message: MessageEntity, onLongPress: (() -> Unit)? = null) {
     when (message.contentType) {
         "IMAGE" -> {
             val bytes = message.mediaBytes
@@ -89,7 +96,10 @@ fun MessageContentBody(message: MessageEntity) {
                         .padding(top = 4.dp)
                         .heightIn(max = 240.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { showFullScreen = true }
+                        .combinedClickable(
+                            onClick = { showFullScreen = true },
+                            onLongClick = { onLongPress?.invoke() }
+                        )
                 )
                 if (showFullScreen) {
                     FullScreenImageDialog(bitmap = bitmap, onDismiss = { showFullScreen = false })

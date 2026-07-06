@@ -37,6 +37,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # github.run_number only ever increases, so every release build automatically gets a
+          # strictly higher versionCode with no manual bump needed.
+          APP_VERSION_CODE: ${{ github.run_number }}
+          APP_VERSION_NAME: "1.0.${{ github.run_number }}"
         run: ./gradlew assembleRelease bundleRelease --console=plain
 
       - name: Remove decoded keystore

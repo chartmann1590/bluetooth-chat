@@ -10,6 +10,12 @@ plugins {
 // builds without these set just produce an unsigned release APK, same as the previous default.
 val releaseKeystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
 
+// CI sets APP_VERSION_CODE to the GitHub Actions run number, which only ever increases, so every
+// release build gets a strictly higher versionCode automatically with no manual bump needed.
+// Local builds without it set fall back to a fixed dev versionCode.
+val ciVersionCode: Int? = System.getenv("APP_VERSION_CODE")?.toIntOrNull()
+val ciVersionName: String? = System.getenv("APP_VERSION_NAME")
+
 android {
     namespace = "com.charles.meshtalk.app"
     compileSdk = 35
@@ -18,8 +24,8 @@ android {
         applicationId = "com.charles.meshtalk.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = ciVersionCode ?: 1
+        versionName = ciVersionName ?: "0.1"
     }
 
     signingConfigs {

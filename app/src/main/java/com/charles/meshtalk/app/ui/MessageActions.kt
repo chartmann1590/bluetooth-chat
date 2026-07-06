@@ -79,7 +79,7 @@ fun MessageContentWithActions(repository: MeshRepository, message: MessageEntity
                 modifier = Modifier.padding(top = 2.dp)
             )
         } else {
-            MessageContentBody(message)
+            MessageContentBody(message, onLongPress = { showSheet = true })
             if (message.edited) {
                 Text(
                     "(edited)",
