@@ -99,9 +99,13 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
     }
 
     // Estimate a bearing per peer from a short rolling history of (heading, rssi) samples: the
-    // circular mean of headings weighted by signal strength, so it drifts toward "whichever way I
-    // was facing when the signal was strongest recently" as you turn or walk around.
+    // circular mean of headings weighted by signal strength. The result is heavily damped (eased
+    // toward the raw estimate a little each tick, not snapped to it) and the RSSI used for radius
+    // is smoothed too, so a peer marker stays put on the map — rotating with it, not chasing every
+    // noisy sample — and only actually moves when the underlying signal sustainedly changes (i.e.
+    // someone actually moving closer/further), not from momentary fluctuation as you turn.
     val bearingByPeer = remember { mutableStateMapOf<String, Float>() }
+    val smoothedRssiByPeer = remember { mutableStateMapOf<String, Float>() }
     val currentHeading = rememberUpdatedState(heading)
     val currentRssi = rememberUpdatedState(rssiMap)
     LaunchedEffect(Unit) {
@@ -112,6 +116,9 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
             val h = currentHeading.value
             val rssiSnapshot = currentRssi.value
             for ((peerKey, rssi) in rssiSnapshot) {
+                val prevRssi = smoothedRssiByPeer[peerKey]
+                smoothedRssiByPeer[peerKey] = if (prevRssi == null) rssi.toFloat() else prevRssi + (rssi - prevRssi) * 0.12f
+
                 val samples = history.getOrPut(peerKey) { mutableListOf() }
                 samples.add(RadarHeadingSample(h, rssi, now))
                 samples.removeAll { now - it.time > 12_000 }
@@ -125,11 +132,15 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
                     sumSin += sin(rad) * weight
                     sumCos += cos(rad) * weight
                 }
-                bearingByPeer[peerKey] = ((Math.toDegrees(atan2(sumSin, sumCos)) + 360) % 360).toFloat()
+                val instantEstimate = ((Math.toDegrees(atan2(sumSin, sumCos)) + 360) % 360).toFloat()
+                val prevBearing = bearingByPeer[peerKey]
+                bearingByPeer[peerKey] =
+                    if (prevBearing == null) instantEstimate else lerpAngleDegrees(prevBearing, instantEstimate, 0.06f)
             }
             val activeKeys = rssiSnapshot.keys
             history.keys.retainAll(activeKeys)
             bearingByPeer.keys.retainAll(activeKeys)
+            smoothedRssiByPeer.keys.retainAll(activeKeys)
         }
     }
 
@@ -169,7 +180,11 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
                 val diameterPx = with(androidx.compose.ui.platform.LocalDensity.current) { diameter.toPx() }
                 val maxRadiusPx = diameterPx / 2 * 0.82f
                 for (contact in nearbyContacts) {
-                    val rssi = rssiMap[contact.signingPubKeyHex] ?: continue
+                    rssiMap[contact.signingPubKeyHex] ?: continue
+                    // Smoothed value for placement/label — settles instead of jittering with
+                    // every noisy sample; falls back to the raw reading for the first tick.
+                    val rssi = smoothedRssiByPeer[contact.signingPubKeyHex]?.toInt()
+                        ?: rssiMap[contact.signingPubKeyHex]!!
                     val bearing = bearingByPeer[contact.signingPubKeyHex] ?: heading
                     val radiusPx = maxRadiusPx * (0.08f + 0.92f * proximityRadiusFraction(rssi))
                     val angleDeg = bearing - heading

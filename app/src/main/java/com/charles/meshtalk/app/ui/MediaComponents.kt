@@ -18,13 +18,16 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
@@ -46,9 +49,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.charles.meshtalk.app.data.MessageEntity
@@ -73,6 +80,7 @@ fun MessageContentBody(message: MessageEntity) {
             val bitmap = remember(message.id) {
                 bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
             }
+            var showFullScreen by remember { mutableStateOf(false) }
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap.asImageBitmap(),
@@ -81,7 +89,11 @@ fun MessageContentBody(message: MessageEntity) {
                         .padding(top = 4.dp)
                         .heightIn(max = 240.dp)
                         .clip(RoundedCornerShape(12.dp))
+                        .clickable { showFullScreen = true }
                 )
+                if (showFullScreen) {
+                    FullScreenImageDialog(bitmap = bitmap, onDismiss = { showFullScreen = false })
+                }
             } else {
                 Text("[photo unavailable]", modifier = Modifier.padding(top = 2.dp))
             }
@@ -89,6 +101,35 @@ fun MessageContentBody(message: MessageEntity) {
         "FILE" -> FileChip(message)
         "LOCATION" -> LocationCard(message)
         else -> Text(message.body, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** A full-screen, tap-anywhere-to-dismiss viewer for a message's photo — same for every message
+ * bubble, in both the public feed and DM threads, and on every device (it's just decoding the
+ * same mesh-delivered bytes that are already stored locally). */
+@Composable
+fun FullScreenImageDialog(bitmap: android.graphics.Bitmap, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Photo, full screen",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(16.dp)
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
     }
 }
 

@@ -52,14 +52,25 @@ fun proximityRadiusFraction(rssi: Int): Float {
     return (meters / MAX_DISPLAY_METERS).coerceIn(0.0, 1.0).toFloat()
 }
 
+/** Eases an angle (degrees) toward a target by fraction [t] of the shortest angular distance
+ * between them, wrapping correctly across the 0/360 boundary. Used to damp bearing estimates so a
+ * peer marker settles into a fixed spot instead of chasing every noisy signal-strength sample. */
+fun lerpAngleDegrees(from: Float, to: Float, t: Float): Float {
+    val diff = ((to - from + 540f) % 360f) - 180f
+    return (from + diff * t + 360f) % 360f
+}
+
 private data class HeadingSample(val heading: Float, val rssi: Int, val time: Long)
 
 /**
  * A rough bearing (degrees, 0 = north) to a single BLE peer: the circular mean of recent compass
  * headings weighted by how strong the signal was at each heading, so it drifts toward "whichever
- * way I was facing when the signal was strongest" as you turn or walk around. Returns null until
- * the peer is detected and at least one sample has been taken. Same technique as the multi-peer
- * radar screen, factored out here for the single-contact Find screen.
+ * way I was facing when the signal was strongest" as you turn or walk around. The result is
+ * heavily damped (eased a small step toward the raw estimate each tick, not snapped to it), so the
+ * displayed bearing settles into a fixed spot and stays there — noisy RSSI blips no longer make it
+ * chase your rotation. Returns null until the peer is detected and at least one sample has been
+ * taken. Same technique as the multi-peer radar screen, factored out here for the single-contact
+ * Find screen.
  */
 @Composable
 fun rememberSignalBearing(heading: Float, rssi: Int?): Float? {
@@ -90,7 +101,8 @@ fun rememberSignalBearing(heading: Float, rssi: Int?): Float? {
                 sumSin += sin(rad) * weight
                 sumCos += cos(rad) * weight
             }
-            bearing = ((Math.toDegrees(atan2(sumSin, sumCos)) + 360) % 360).toFloat()
+            val instantEstimate = ((Math.toDegrees(atan2(sumSin, sumCos)) + 360) % 360).toFloat()
+            bearing = bearing?.let { lerpAngleDegrees(it, instantEstimate, 0.06f) } ?: instantEstimate
         }
     }
     return bearing

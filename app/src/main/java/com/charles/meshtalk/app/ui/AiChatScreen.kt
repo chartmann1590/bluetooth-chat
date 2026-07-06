@@ -306,6 +306,7 @@ private fun ChatBubble(message: AiMessageEntity) {
         )
         message.imageBytes?.let { bytes ->
             val bmp = remember(message.id) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+            var showFullScreen by remember { mutableStateOf(false) }
             if (bmp != null) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
@@ -314,7 +315,11 @@ private fun ChatBubble(message: AiMessageEntity) {
                         .padding(top = 4.dp)
                         .heightIn(max = 200.dp)
                         .clip(RoundedCornerShape(12.dp))
+                        .clickable { showFullScreen = true }
                 )
+                if (showFullScreen) {
+                    FullScreenImageDialog(bitmap = bmp, onDismiss = { showFullScreen = false })
+                }
             }
         }
         Text(message.text, modifier = Modifier.padding(top = 2.dp))
