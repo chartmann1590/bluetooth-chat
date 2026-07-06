@@ -153,11 +153,14 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 mapBitmap?.let { bmp ->
+                    // Rotates opposite the phone's heading so "up" on screen always matches which
+                    // way you're facing — the same forward-up frame the peer arrows already use,
+                    // like a turn-by-turn navigation map.
                     Image(
                         bitmap = bmp.asImageBitmap(),
                         contentDescription = "Map of your area",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().alpha(0.6f)
+                        modifier = Modifier.fillMaxSize().rotate(-heading).alpha(0.6f)
                     )
                 }
 
@@ -168,7 +171,7 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
                 for (contact in nearbyContacts) {
                     val rssi = rssiMap[contact.signingPubKeyHex] ?: continue
                     val bearing = bearingByPeer[contact.signingPubKeyHex] ?: heading
-                    val radiusPx = maxRadiusPx * (0.18f + 0.82f * proximityRadiusFraction(rssi))
+                    val radiusPx = maxRadiusPx * (0.08f + 0.92f * proximityRadiusFraction(rssi))
                     val angleDeg = bearing - heading
                     val rad = Math.toRadians((angleDeg - 90).toDouble())
                     val offsetPx = Offset((radiusPx * cos(rad)).toFloat(), (radiusPx * sin(rad)).toFloat())
@@ -223,9 +226,9 @@ fun FindAllScreen(repository: MeshRepository, onOpenPeer: (String) -> Unit) {
                         "offline next time it does). Peer direction is a rough signal-strength " +
                         "estimate, not exact position."
                 else ->
-                    "Map is your approximate area only — peer positions are relative Bluetooth " +
-                        "signal estimates, not GPS placements. Turn around slowly to help the " +
-                        "arrows settle."
+                    "You're always at the center, map rotates to match which way you're facing. " +
+                        "Peer positions are relative Bluetooth signal estimates, not GPS " +
+                        "placements — turn around slowly to help the arrows settle."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

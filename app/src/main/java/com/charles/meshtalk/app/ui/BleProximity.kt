@@ -10,25 +10,46 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 
-/** Coarse "how close" label + signal-bar count from a raw BLE RSSI reading (dBm). Shared by the
- * single-contact Find screen and the multi-peer Bluetooth radar screen. */
-fun proximityFor(rssi: Int): Pair<String, Int> = when {
-    rssi >= -55 -> "Very close" to 5
-    rssi >= -65 -> "Close" to 4
-    rssi >= -75 -> "Nearby" to 3
-    rssi >= -85 -> "Far" to 2
-    else -> "Very far" to 1
+// Standard log-distance path-loss model used for BLE proximity estimation (the same technique
+// iBeacon-style proximity APIs use): distance = 10 ^ ((measuredPowerAt1m - rssi) / (10 * N)).
+// TX_POWER_AT_1M is the typical RSSI a phone's BLE radio reads at 1 meter; N is the path-loss
+// exponent (2.0 = free space). Neither is calibrated per-device, so this is an estimate, not a
+// precise measurement — but it tracks real-world distance far better than treating dBm linearly,
+// which badly overstated distance for anything within a few feet.
+private const val TX_POWER_AT_1M = -59
+private const val PATH_LOSS_EXPONENT = 2.0
+private const val MAX_DISPLAY_METERS = 15.0
+
+/** Estimated distance in meters from a raw BLE RSSI reading (dBm), via the log-distance path-loss
+ * model. Best-effort: walls, orientation, and antenna differences all shift this by several dB. */
+fun estimatedDistanceMeters(rssi: Int): Double {
+    val ratio = (TX_POWER_AT_1M - rssi) / (10.0 * PATH_LOSS_EXPONENT)
+    return 10.0.pow(ratio)
+}
+
+/** Coarse "how close" label + signal-bar count from a raw BLE RSSI reading (dBm), based on
+ * estimated distance rather than raw dBm thresholds. Shared by the single-contact Find screen and
+ * the multi-peer Bluetooth radar screen. */
+fun proximityFor(rssi: Int): Pair<String, Int> {
+    val meters = estimatedDistanceMeters(rssi)
+    return when {
+        meters < 1.0 -> "Very close" to 5
+        meters < 3.0 -> "Close" to 4
+        meters < 8.0 -> "Nearby" to 3
+        meters < 15.0 -> "Far" to 2
+        else -> "Very far" to 1
+    }
 }
 
 /** Maps RSSI to a 0f (right on top of you) .. 1f (at the edge of range) radius fraction, for
- * placing a peer on the radar. Not a real distance measurement — just a monotonic, clamped scale. */
+ * placing a peer on the radar, using the same distance estimate as [proximityFor] so someone a
+ * few feet away actually lands near the center instead of partway to the edge. */
 fun proximityRadiusFraction(rssi: Int): Float {
-    val near = -40f
-    val far = -95f
-    val clamped = rssi.toFloat().coerceIn(far, near)
-    return (near - clamped) / (near - far)
+    val meters = estimatedDistanceMeters(rssi)
+    return (meters / MAX_DISPLAY_METERS).coerceIn(0.0, 1.0).toFloat()
 }
 
 private data class HeadingSample(val heading: Float, val rssi: Int, val time: Long)
