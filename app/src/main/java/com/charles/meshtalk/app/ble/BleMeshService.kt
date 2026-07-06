@@ -566,12 +566,18 @@ class BleMeshService : Service() {
     }
 
     private fun refreshPeerCount() {
-        // Resolve each connected address to its peer identity where known (learned from
-        // ANNOUNCE); addresses with no known identity yet fall back to counting as themselves.
-        // This collapses the same physical peer's two role-based connections into one.
+        // Resolve each currently-connected address to its peer identity (learned from ANNOUNCE).
+        // Addresses with no known identity yet are dropped rather than counted as their own
+        // "peer" — a single physical phone commonly holds two simultaneous links to us (one
+        // where it's the central, one where it's the peripheral) under two different BLE
+        // addresses, and addresses rotate over a long session; counting unresolved addresses as
+        // distinct peers let stale/duplicate addresses inflate the total well past the number of
+        // physical devices actually around. Resolving through identity first collapses all of
+        // that back down to "how many real peers," at the cost of a brief moment right after a
+        // fresh connection (before its first announce arrives) where it doesn't count yet.
         val distinct = HashSet<String>()
         (centralLinks.keys.asSequence() + peripheralLinks.keys.asSequence()).forEach { address ->
-            distinct.add(addressToPeerKey[address] ?: address)
+            addressToPeerKey[address]?.let { distinct.add(it) }
         }
         _connectedPeerCount.value = distinct.size
     }

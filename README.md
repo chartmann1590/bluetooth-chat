@@ -104,7 +104,7 @@ app/src/main/java/com/charles/meshtalk/app/
 
 ## Known limitations
 
-- Peer counts can transiently show one higher than the number of physical devices right after a fresh connection, until each link's identity announcement is exchanged (BLE address rotation means one phone can briefly appear as two connections).
+- Peer counts can transiently show one *lower* than the real number of physical devices for a moment right after a fresh connection, until that link's identity announcement arrives — the count only includes addresses that have been resolved to a known peer identity, specifically to avoid the opposite (and worse) failure mode of unresolved/rotated BLE addresses inflating the total.
 - No delivery confirmation or retry for failed sends — mesh messaging is best-effort.
 - Attachments are capped small by design; video isn't supported.
 - The static map thumbnail for a shared location requires the sender to have internet connectivity at the moment they share it; the coordinates and "open in Maps" fallback always work regardless.
