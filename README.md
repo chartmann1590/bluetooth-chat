@@ -87,6 +87,10 @@ Edits, deletes, and reactions are new packet types (`EDIT`/`DELETE`/`REACTION`) 
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Releases
+
+Every push to `master` runs [`.github/workflows/release.yml`](.github/workflows/release.yml): it runs the unit tests, builds a signed release APK and Android App Bundle, and publishes them as a new GitHub release (tagged `build-<run number>`) under [Releases](https://github.com/chartmann1590/bluetooth-chat/releases). Signing uses a keystore stored as a base64-encoded GitHub Secret (`ANDROID_KEYSTORE_BASE64`) plus the store/key passwords and alias as separate secrets — nothing sensitive is committed to the repo. Building `assembleRelease`/`bundleRelease` locally without those environment variables set just produces an unsigned build, same as before.
+
 ## Project structure
 
 ```

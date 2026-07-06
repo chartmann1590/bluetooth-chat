@@ -5,6 +5,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Release signing comes from environment variables (set by CI from GitHub Secrets) rather than a
+// committed keystore.properties — nothing sensitive lives in this repo. Local `assembleRelease`
+// builds without these set just produce an unsigned release APK, same as the previous default.
+val releaseKeystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
+
 android {
     namespace = "com.charles.meshtalk.app"
     compileSdk = 35
@@ -17,9 +22,23 @@ android {
         versionName = "0.1"
     }
 
+    signingConfigs {
+        if (releaseKeystorePath != null) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseKeystorePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -64,6 +83,8 @@ dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 kotlin {
