@@ -6,8 +6,11 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ContactEntity::class, MessageEntity::class, ReadReceiptEntity::class, ReactionEntity::class],
-    version = 4,
+    entities = [
+        ContactEntity::class, MessageEntity::class, ReadReceiptEntity::class, ReactionEntity::class,
+        AiSessionEntity::class, AiMessageEntity::class
+    ],
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -15,6 +18,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun readReceiptDao(): ReadReceiptDao
     abstract fun reactionDao(): ReactionDao
+    abstract fun aiChatDao(): AiChatDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

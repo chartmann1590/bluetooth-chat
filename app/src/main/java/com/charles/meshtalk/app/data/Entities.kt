@@ -53,3 +53,23 @@ data class ReadReceiptEntity(
     val readerNickname: String,
     val timestamp: Long
 )
+
+/** A saved on-device AI chat conversation — local-only, never touches the mesh. [title] defaults
+ * to a truncated copy of the first message so the history list is scannable at a glance. */
+@Entity(tableName = "ai_sessions")
+data class AiSessionEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+@Entity(tableName = "ai_messages")
+data class AiMessageEntity(
+    @PrimaryKey val id: String,
+    val sessionId: String,
+    val fromUser: Boolean,
+    val text: String,
+    val imageBytes: ByteArray? = null,
+    val timestamp: Long
+)

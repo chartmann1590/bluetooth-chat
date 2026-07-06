@@ -3,6 +3,7 @@ package com.charles.meshtalk.app.ai
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
@@ -143,10 +144,13 @@ object GemmaEngineManager {
             EngineConfig(
                 modelPath = file.absolutePath,
                 backend = backend,
-                visionBackend = null,
+                // Gemma 4 is a multimodal model; letting it see images uses the same backend as
+                // text since we don't need a separate accelerator for the (small, pre-compressed)
+                // photos this app sends it.
+                visionBackend = backend,
                 audioBackend = null,
                 maxNumTokens = null,
-                maxNumImages = null,
+                maxNumImages = 1,
                 cacheDir = context.cacheDir.absolutePath
             )
         )
@@ -154,10 +158,15 @@ object GemmaEngineManager {
         return engine
     }
 
-    suspend fun sendMessage(text: String): String = withContext(Dispatchers.IO) {
+    suspend fun sendMessage(text: String, imageBytes: ByteArray? = null): String = withContext(Dispatchers.IO) {
         val conv = conversation ?: return@withContext "(AI not ready yet)"
         try {
-            val response = conv.sendMessage(text, emptyMap())
+            val response = if (imageBytes == null) {
+                conv.sendMessage(text, emptyMap())
+            } else {
+                val contents = Contents.of(Content.ImageBytes(imageBytes), Content.Text(text))
+                conv.sendMessage(contents, emptyMap())
+            }
             response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
                 .ifBlank { "(no response)" }
         } catch (e: Exception) {

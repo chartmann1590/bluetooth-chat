@@ -16,7 +16,7 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 - **Read receipts** — sent messages show a "Read" checkmark once the recipient (DM) or any peer (public feed, listing who) has opened it.
 - **Location sharing** — share your current coordinates with a best-effort static map thumbnail (fetched once at send time, then carried over the mesh like a photo — no internet needed to view it after that); falls back to coordinates + "open in Maps" if no connectivity was available when sending.
 - **Typing indicators** — see "so-and-so is typing…" live in both the public feed and DM threads (ephemeral over-the-mesh signal, never stored or replayed to peers who reconnect later).
-- **On-device AI chat** — a private, fully-offline chat with Google's Gemma 4 model running locally via [LiteRT-LM](https://ai.google.dev/edge/litert), Google AI Edge's on-device LLM runtime. One-time ~2.6GB download, then works with zero connectivity forever after; nothing typed here ever goes over the mesh. Uses the on-device GPU delegate when available, falling back to CPU automatically.
+- **On-device AI chat** — a private, fully-offline chat with Google's Gemma 4 model running locally via [LiteRT-LM](https://ai.google.dev/edge/litert), Google AI Edge's on-device LLM runtime. One-time ~2.6GB download, then works with zero connectivity forever after; nothing typed here ever goes over the mesh. Uses the on-device GPU delegate when available, falling back to CPU automatically. You can attach a photo for Gemma to look at (Gemma 4 is multimodal), and past conversations are saved locally — start a new chat any time from the "+" button and pick up an old one from the history icon. A reply keeps generating even if you switch tabs mid-response.
 - **Bluetooth proximity finder** — when GPS and internet are both unavailable, find a nearby contact by raw Bluetooth signal strength (RSSI): a live signal-strength gauge, a directional arrow (a rolling "which way was the signal strongest" estimate as you turn), and "Very close" → "Very far" estimate. Requires the other person to have their "Tracking beacon" enabled in Settings (which just advertises more frequently — anyone scanning can already see raw signal strength regardless).
 - **Bluetooth radar tab** — an opt-in "Find" tab (Settings toggle) showing a live map/radar of everyone currently reachable over BLE at once, each plotted with an arrow (a rolling "which way was the signal strongest" estimate as you turn) and an approximate distance from RSSI. The map backdrop is your rough area only, fetched once and cached offline for reuse with no connectivity.
 - **Offline map caching** — map images (for shared locations and the radar backdrop) are cached to disk the first time they're fetched, keyed by a coarse lat/lon grid cell, so viewing the same area again later works with no internet.
@@ -49,6 +49,11 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 <tr>
 <td><img src="docs/screenshots/message-edited.png" width="220" alt="Edited message with (edited) tag"><br><sub>Edited message</sub></td>
 <td><img src="docs/screenshots/message-deleted.png" width="220" alt="Deleted message placeholder"><br><sub>Deleted message</sub></td>
+<td><img src="docs/screenshots/ai-chat-with-image.png" width="220" alt="On-device AI chat with an attached photo"><br><sub>AI chat: photo attached</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/ai-chat-history.png" width="220" alt="On-device AI chat history dialog"><br><sub>AI chat: saved history</sub></td>
+<td></td>
 <td></td>
 </tr>
 </table>

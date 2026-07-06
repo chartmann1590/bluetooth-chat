@@ -75,3 +75,33 @@ interface ReadReceiptDao {
     @Query("SELECT EXISTS(SELECT 1 FROM read_receipts WHERE messageId = :messageId AND readerPubKeyHex = :readerPubKeyHex)")
     suspend fun hasRead(messageId: String, readerPubKeyHex: String): Boolean
 }
+
+@Dao
+interface AiChatDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSession(session: AiSessionEntity)
+
+    @Insert
+    suspend fun insertMessage(message: AiMessageEntity)
+
+    @Query("SELECT * FROM ai_sessions ORDER BY updatedAt DESC")
+    fun observeSessions(): Flow<List<AiSessionEntity>>
+
+    @Query("SELECT * FROM ai_messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
+    fun observeMessages(sessionId: String): Flow<List<AiMessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM ai_messages WHERE sessionId = :sessionId")
+    suspend fun messageCount(sessionId: String): Int
+
+    @Query("UPDATE ai_sessions SET updatedAt = :updatedAt WHERE id = :sessionId")
+    suspend fun touchSession(sessionId: String, updatedAt: Long)
+
+    @Query("UPDATE ai_sessions SET title = :title WHERE id = :sessionId")
+    suspend fun setSessionTitle(sessionId: String, title: String)
+
+    @Query("DELETE FROM ai_sessions WHERE id = :sessionId")
+    suspend fun deleteSession(sessionId: String)
+
+    @Query("DELETE FROM ai_messages WHERE sessionId = :sessionId")
+    suspend fun deleteMessagesForSession(sessionId: String)
+}
