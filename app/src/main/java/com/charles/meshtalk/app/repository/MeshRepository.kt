@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 data class TypingInfo(val nickname: String, val lastTypingAt: Long)
 
@@ -54,6 +55,42 @@ class MeshRepository private constructor(private val appContext: Context) {
                 _dmTypers.value = _dmTypers.value.filterValues { it.lastTypingAt >= cutoff }
             }
         }
+    }
+
+    // How many times we've retried each not-yet-read sent message, in-memory only — resets on
+    // process restart, which is fine since retries are meant to smooth over short-lived gaps, not
+    // guarantee eventual delivery forever (the mesh's store-and-forward cache already handles the
+    // "peer reconnects much later" case separately).
+    private val retryAttempts = ConcurrentHashMap<String, Int>()
+
+    init {
+        scope.launch {
+            while (true) {
+                delay(RETRY_INTERVAL_MS)
+                retryPendingSends()
+            }
+        }
+    }
+
+    /** Re-broadcasts our own sent-but-not-yet-read messages a bounded number of times while we
+     * have at least one live mesh link, to smooth over a dropped packet or a recipient who was
+     * briefly out of range when it was first sent — on top of (not instead of) the replay cache's
+     * existing "catch up a newly-connected peer" behavior. */
+    private suspend fun retryPendingSends() {
+        val svc = service ?: return
+        if (svc.connectedPeerCount.value == 0) return
+        val now = System.currentTimeMillis()
+        val candidates = db.messageDao().unreadSentMessages()
+        for (message in candidates) {
+            val age = now - message.timestamp
+            if (age < RETRY_MIN_AGE_MS || age > RETRY_MAX_AGE_MS) continue
+            val attempts = retryAttempts.getOrDefault(message.id, 0)
+            if (attempts >= RETRY_MAX_ATTEMPTS) continue
+            if (svc.resendMessage(message.id)) {
+                retryAttempts[message.id] = attempts + 1
+            }
+        }
+        retryAttempts.keys.retainAll(candidates.map { it.id }.toSet())
     }
 
     fun sendTypingIndicator(recipientPubKeyHex: String?) {
@@ -396,6 +433,14 @@ class MeshRepository private constructor(private val appContext: Context) {
         private const val PREF_RECEIVE_ATTACHMENTS = "receive_attachments"
         private const val PREF_TRACKING_BEACON = "tracking_beacon"
         private const val PREF_FIND_FEATURE = "find_feature_enabled"
+
+        // Retry tuning: check every 25s, only retry messages older than 20s (give the first send
+        // a moment to succeed normally) and younger than 10 minutes, capped at 5 attempts each —
+        // bounded so a permanently-unreachable recipient doesn't get retried forever.
+        private const val RETRY_INTERVAL_MS = 25_000L
+        private const val RETRY_MIN_AGE_MS = 20_000L
+        private const val RETRY_MAX_AGE_MS = 10 * 60_000L
+        private const val RETRY_MAX_ATTEMPTS = 5
 
         @Volatile private var instance: MeshRepository? = null
 

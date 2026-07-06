@@ -109,6 +109,10 @@ class MeshEngine(private val identity: Identity) {
 
     fun agreementKeyFor(signingPubKeyHex: String): ByteArray? = agreementKeys[signingPubKeyHex]
 
+    /** Raw signed bytes for a previously sent/relayed message, if still in the replay cache —
+     * lets a retry re-broadcast the exact original packet rather than building a new one. */
+    fun rawBytesFor(messageIdHex: String): ByteArray? = cache[messageIdHex]
+
     /** Packets to send to a peer we just connected to, e.g. our own announce + recent history. */
     fun packetsForNewPeer(): List<ByteArray> {
         val announce = createAnnounce()

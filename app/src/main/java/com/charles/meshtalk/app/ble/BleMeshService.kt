@@ -611,6 +611,15 @@ class BleMeshService : Service() {
     fun knowsAgreementKeyFor(recipientSigningPubKeyHex: String): Boolean =
         meshEngine?.agreementKeyFor(recipientSigningPubKeyHex) != null
 
+    /** Re-broadcasts a previously sent message's original signed bytes, e.g. because it hasn't
+     * been read yet and we now have a live link. Returns false if the bytes have aged out of the
+     * replay cache (nothing to resend) or no engine is bound. */
+    fun resendMessage(messageIdHex: String): Boolean {
+        val bytes = meshEngine?.rawBytesFor(messageIdHex) ?: return false
+        broadcastToAllLinks(bytes)
+        return true
+    }
+
     /** [recipientSigningPubKeyHex] null means broadcast (public message receipt, everyone records it). */
     fun sendReadReceipt(originalMessageIdHex: String, recipientSigningPubKeyHex: String?) {
         val engine = meshEngine ?: return

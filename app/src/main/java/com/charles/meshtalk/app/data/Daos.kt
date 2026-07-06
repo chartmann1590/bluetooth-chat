@@ -47,6 +47,17 @@ interface MessageDao {
 
     @Query("UPDATE messages SET deleted = 1, body = '', mediaBytes = NULL, mediaFilename = NULL WHERE id = :id")
     suspend fun markDeleted(id: String)
+
+    /** Messages we sent that no one has read yet — candidates for retry re-broadcast. */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE isMine = 1 AND deleted = 0
+        AND id NOT IN (SELECT DISTINCT messageId FROM read_receipts)
+        ORDER BY timestamp ASC
+        """
+    )
+    suspend fun unreadSentMessages(): List<MessageEntity>
 }
 
 @Dao

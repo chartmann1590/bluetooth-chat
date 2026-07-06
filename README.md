@@ -109,7 +109,7 @@ app/src/main/java/com/charles/meshtalk/app/
 ## Known limitations
 
 - Peer counts can transiently show one *lower* than the real number of physical devices for a moment right after a fresh connection, until that link's identity announcement arrives — the count only includes addresses that have been resolved to a known peer identity, specifically to avoid the opposite (and worse) failure mode of unresolved/rotated BLE addresses inflating the total.
-- No delivery confirmation or retry for failed sends — mesh messaging is best-effort.
+- Sent messages that haven't been read yet are automatically re-broadcast a few times (every ~25s, for up to 10 minutes, capped at 5 attempts) while at least one mesh link is up — this smooths over a dropped packet or a recipient who was briefly out of range, on top of the existing store-and-forward cache that catches up anyone who reconnects later. There's still no delivery confirmation distinct from a read receipt, and retries eventually stop, so messaging remains best-effort beyond that window.
 - Attachments are capped small by design; video isn't supported.
 - The static map thumbnail for a shared location needs internet at the moment it's shared *unless* that same area (~110m grid cell) has already been cached offline from an earlier share or a visit to the radar tab; the coordinates and "open in Maps" fallback always work regardless.
 - The on-device AI model is a one-time ~2.6GB download and needs a reasonably capable device (8GB+ RAM recommended) to run well; it's a separate local feature and isn't part of the mesh protocol.
