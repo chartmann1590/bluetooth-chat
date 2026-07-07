@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -105,22 +106,38 @@ fun PublicFeedScreen(repository: MeshRepository) {
 
 @Composable
 private fun PublicMessageRow(repository: MeshRepository, message: MessageEntity) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                message.senderNickname,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = SignalGreen
-            )
-            Text(
-                relativeTime(message.timestamp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start
+    ) {
+        Column(
+            horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start,
+            modifier = Modifier.widthIn(max = 300.dp)
+        ) {
+            if (!message.isMine) {
+                Text(
+                    message.senderNickname,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = SignalGreen,
+                    modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
+                )
+            }
+            MessageContentWithActions(repository, message)
+            Row(
+                modifier = Modifier.padding(top = 2.dp, start = 6.dp, end = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    relativeTime(message.timestamp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ReadReceiptIndicator(repository, message)
+            }
         }
-        MessageContentWithActions(repository, message)
-        ReadReceiptIndicator(repository, message)
     }
 }
 

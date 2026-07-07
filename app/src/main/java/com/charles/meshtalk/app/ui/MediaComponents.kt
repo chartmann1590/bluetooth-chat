@@ -40,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -155,30 +156,33 @@ private fun LocationCard(message: MessageEntity) {
     val bytes = message.mediaBytes
     val bitmap = remember(message.id) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
 
-    Column(
-        modifier = Modifier
-            .padding(top = 4.dp)
-            .widthIn(max = 280.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { openInMaps(context, lat, lng) }
+    // Fixed dark card + light text regardless of the surrounding bubble color (sent bubbles are
+    // bright green, incoming ones are dark) so this nested card stays legible either way.
+    Surface(
+        color = Color.Black.copy(alpha = 0.25f),
+        contentColor = Color(0xFFECECEC),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(top = 4.dp).widthIn(max = 280.dp),
+        onClick = { openInMaps(context, lat, lng) }
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = "Map",
-                modifier = Modifier.heightIn(max = 180.dp)
-            )
-        }
-        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.LocationOn, contentDescription = null, tint = SignalGreen)
-            Column(modifier = Modifier.padding(start = 8.dp)) {
-                Text("%.5f, %.5f".format(lat, lng), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Tap to open in Maps",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Column {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Map",
+                    modifier = Modifier.heightIn(max = 180.dp)
                 )
+            }
+            Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.LocationOn, contentDescription = null, tint = SignalGreen)
+                Column(modifier = Modifier.padding(start = 8.dp)) {
+                    Text("%.5f, %.5f".format(lat, lng), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Tap to open in Maps",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFECECEC).copy(alpha = 0.7f)
+                    )
+                }
             }
         }
     }
@@ -197,27 +201,26 @@ private fun openInMaps(context: Context, latitude: Double, longitude: Double) {
 @Composable
 private fun FileChip(message: MessageEntity) {
     val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .padding(top = 4.dp)
-            .widthIn(max = 260.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { openFile(context, message) }
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = Color.Black.copy(alpha = 0.25f),
+        contentColor = Color(0xFFECECEC),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(top = 4.dp).widthIn(max = 260.dp),
+        onClick = { openFile(context, message) }
     ) {
-        Icon(Icons.Filled.InsertDriveFile, contentDescription = null)
-        Column(modifier = Modifier.padding(start = 8.dp).widthIn(max = 160.dp)) {
-            Text(message.mediaFilename ?: message.body, maxLines = 1)
-            Text(
-                "${(message.mediaBytes?.size ?: 0) / 1000}KB · tap to open",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = { saveToDownloads(context, message) }) {
-            Icon(Icons.Filled.Download, contentDescription = "Save")
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.InsertDriveFile, contentDescription = null)
+            Column(modifier = Modifier.padding(start = 8.dp).widthIn(max = 160.dp)) {
+                Text(message.mediaFilename ?: message.body, maxLines = 1)
+                Text(
+                    "${(message.mediaBytes?.size ?: 0) / 1000}KB · tap to open",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFECECEC).copy(alpha = 0.7f)
+                )
+            }
+            IconButton(onClick = { saveToDownloads(context, message) }) {
+                Icon(Icons.Filled.Download, contentDescription = "Save")
+            }
         }
     }
 }

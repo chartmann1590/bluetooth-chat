@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -29,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import com.charles.meshtalk.app.AppVisibility
 import com.charles.meshtalk.app.data.MessageEntity
 import com.charles.meshtalk.app.repository.MeshRepository
-import com.charles.meshtalk.app.ui.theme.SignalGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,20 +117,29 @@ fun DmThreadScreen(repository: MeshRepository, peerKeyHex: String) {
 
 @Composable
 private fun DmMessageRow(repository: MeshRepository, message: MessageEntity) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                if (message.isMine) "you" else message.senderNickname,
-                fontFamily = FontFamily.Monospace,
-                color = SignalGreen
-            )
-            Text(
-                relativeTime(message.timestamp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    // No per-message sender label — like a real SMS thread, side alone (right = you, left = them)
+    // conveys who sent it, since it's always exactly one other person here.
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start
+    ) {
+        Column(
+            horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start,
+            modifier = Modifier.widthIn(max = 300.dp)
+        ) {
+            MessageContentWithActions(repository, message)
+            Row(
+                modifier = Modifier.padding(top = 2.dp, start = 6.dp, end = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    relativeTime(message.timestamp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ReadReceiptIndicator(repository, message)
+            }
         }
-        MessageContentWithActions(repository, message)
-        ReadReceiptIndicator(repository, message)
     }
 }

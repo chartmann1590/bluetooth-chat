@@ -1,7 +1,6 @@
 package com.charles.meshtalk.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +24,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -43,7 +44,12 @@ import androidx.compose.ui.unit.sp
 import com.charles.meshtalk.app.data.MessageEntity
 import com.charles.meshtalk.app.data.ReactionEntity
 import com.charles.meshtalk.app.repository.MeshRepository
+import com.charles.meshtalk.app.ui.theme.MeshBubbleIncoming
+import com.charles.meshtalk.app.ui.theme.MeshBubbleIncomingContent
+import com.charles.meshtalk.app.ui.theme.MeshBubbleMine
+import com.charles.meshtalk.app.ui.theme.MeshBubbleMineContent
 import com.charles.meshtalk.app.ui.theme.SignalGreen
+import com.charles.meshtalk.app.ui.theme.chatBubbleShape
 
 private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
 
@@ -62,35 +68,39 @@ fun MessageContentWithActions(repository: MeshRepository, message: MessageEntity
     val myKey by repository.myPublicKeyHex.collectAsState()
     val clipboard = LocalClipboardManager.current
 
-    Column(
+    Surface(
+        color = if (message.isMine) MeshBubbleMine else MeshBubbleIncoming,
+        contentColor = if (message.isMine) MeshBubbleMineContent else MeshBubbleIncomingContent,
+        shape = chatBubbleShape(message.isMine),
         modifier = Modifier
-            .fillMaxWidth()
+            .widthIn(max = 280.dp)
             .combinedClickable(
                 onClick = {},
                 onLongClick = { if (!message.deleted) showSheet = true }
             )
     ) {
-        if (message.deleted) {
-            Text(
-                "This message was deleted",
-                style = MaterialTheme.typography.bodyMedium,
-                fontStyle = FontStyle.Italic,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        } else {
-            MessageContentBody(message, onLongPress = { showSheet = true })
-            if (message.edited) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            if (message.deleted) {
                 Text(
-                    "(edited)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "This message was deleted",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = (if (message.isMine) MeshBubbleMineContent else MeshBubbleIncomingContent).copy(alpha = 0.7f)
                 )
+            } else {
+                MessageContentBody(message, onLongPress = { showSheet = true })
+                if (message.edited) {
+                    Text(
+                        "(edited)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = (if (message.isMine) MeshBubbleMineContent else MeshBubbleIncomingContent).copy(alpha = 0.7f)
+                    )
+                }
             }
-        }
 
-        if (reactions.isNotEmpty()) {
-            ReactionsRow(reactions, myKey) { emoji -> repository.reactToMessage(message, emoji) }
+            if (reactions.isNotEmpty()) {
+                ReactionsRow(reactions, myKey) { emoji -> repository.reactToMessage(message, emoji) }
+            }
         }
     }
 
@@ -135,25 +145,27 @@ private fun ReactionsRow(reactions: List<ReactionEntity>, myKey: String?, onTogg
     Row(modifier = Modifier.padding(top = 4.dp)) {
         grouped.forEach { (emoji, reactors) ->
             val reactedByMe = reactors.any { it.reactorPubKeyHex == myKey }
-            Row(
-                modifier = Modifier
-                    .padding(end = 6.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (reactedByMe) SignalGreen.copy(alpha = 0.25f)
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    .clickable { onToggle(emoji) }
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Fixed dark chip regardless of the bubble it sits on (sent bubbles are bright green,
+            // incoming ones are dark) so the chip and its text stay legible either way.
+            Surface(
+                color = if (reactedByMe) SignalGreen.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.3f),
+                contentColor = Color(0xFFECECEC),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(end = 6.dp),
+                onClick = { onToggle(emoji) }
             ) {
-                Text(emoji, fontSize = 14.sp)
-                if (reactors.size > 1) {
-                    Text(
-                        " ${reactors.size}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(emoji, fontSize = 14.sp)
+                    if (reactors.size > 1) {
+                        Text(
+                            " ${reactors.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFECECEC)
+                        )
+                    }
                 }
             }
         }

@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,13 +53,20 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Surface
 import com.charles.meshtalk.app.ai.AiChatRepository
 import com.charles.meshtalk.app.ai.GemmaEngineManager
 import com.charles.meshtalk.app.ai.ModelState
 import com.charles.meshtalk.app.data.AiMessageEntity
 import com.charles.meshtalk.app.media.ImageCompressor
 import com.charles.meshtalk.app.media.MediaPrepResult
+import com.charles.meshtalk.app.ui.theme.MeshBubbleIncoming
+import com.charles.meshtalk.app.ui.theme.MeshBubbleIncomingContent
+import com.charles.meshtalk.app.ui.theme.MeshBubbleMine
+import com.charles.meshtalk.app.ui.theme.MeshBubbleMineContent
 import com.charles.meshtalk.app.ui.theme.SignalGreen
+import com.charles.meshtalk.app.ui.theme.chatBubbleShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -298,30 +304,50 @@ private fun DownloadPrompt(onDownload: () -> Unit) {
 
 @Composable
 private fun ChatBubble(message: AiMessageEntity) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(
-            if (message.fromUser) "you" else "gemma",
-            color = if (message.fromUser) MaterialTheme.colorScheme.onSurfaceVariant else SignalGreen,
-            style = MaterialTheme.typography.labelMedium
-        )
-        message.imageBytes?.let { bytes ->
-            val bmp = remember(message.id) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-            var showFullScreen by remember { mutableStateOf(false) }
-            if (bmp != null) {
-                Image(
-                    bitmap = bmp.asImageBitmap(),
-                    contentDescription = "Attached photo",
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .heightIn(max = 200.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { showFullScreen = true }
+    val isMine = message.fromUser
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start
+    ) {
+        Column(
+            horizontalAlignment = if (isMine) Alignment.End else Alignment.Start,
+            modifier = Modifier.widthIn(max = 300.dp)
+        ) {
+            if (!isMine) {
+                Text(
+                    "gemma",
+                    color = SignalGreen,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
                 )
-                if (showFullScreen) {
-                    FullScreenImageDialog(bitmap = bmp, onDismiss = { showFullScreen = false })
+            }
+            Surface(
+                color = if (isMine) MeshBubbleMine else MeshBubbleIncoming,
+                contentColor = if (isMine) MeshBubbleMineContent else MeshBubbleIncomingContent,
+                shape = chatBubbleShape(isMine),
+                modifier = Modifier.widthIn(max = 280.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    message.imageBytes?.let { bytes ->
+                        val bmp = remember(message.id) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+                        var showFullScreen by remember { mutableStateOf(false) }
+                        if (bmp != null) {
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Attached photo",
+                                modifier = Modifier
+                                    .heightIn(max = 200.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { showFullScreen = true }
+                            )
+                            if (showFullScreen) {
+                                FullScreenImageDialog(bitmap = bmp, onDismiss = { showFullScreen = false })
+                            }
+                        }
+                    }
+                    Text(message.text)
                 }
             }
         }
-        Text(message.text, modifier = Modifier.padding(top = 2.dp))
     }
 }
