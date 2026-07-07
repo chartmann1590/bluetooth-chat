@@ -8,6 +8,7 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.charles.meshtalk.app.AppVisibility
 import com.charles.meshtalk.app.ble.BleMeshService
+import com.charles.meshtalk.app.ble.AudioCodecId
 import com.charles.meshtalk.app.ble.MeshEvent
 import com.charles.meshtalk.app.ble.MessageContent
 import com.charles.meshtalk.app.crypto.toHex
@@ -119,6 +120,17 @@ class MeshRepository private constructor(private val appContext: Context) {
         _findFeatureEnabled.value = enabled
     }
 
+    // Off by default: voice clips are far larger than text/action packets, so relaying them through
+    // the mesh costs proportionally more bandwidth/battery per hop than what this app normally does.
+    private val _voiceRelayEnabled = MutableStateFlow(prefs.getBoolean(PREF_VOICE_RELAY, false))
+    val voiceRelayEnabled: StateFlow<Boolean> = _voiceRelayEnabled.asStateFlow()
+
+    fun setVoiceRelayEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_VOICE_RELAY, enabled).apply()
+        _voiceRelayEnabled.value = enabled
+        service?.setVoiceRelayEnabled(enabled)
+    }
+
     // Local-only policy: still relayed to other mesh peers regardless of this setting (that's
     // just forwarding bytes), but this device won't store/display incoming photos or files.
     private val _receiveAttachments = MutableStateFlow(prefs.getBoolean(PREF_RECEIVE_ATTACHMENTS, true))
@@ -221,6 +233,7 @@ class MeshRepository private constructor(private val appContext: Context) {
             service = svc
             pendingNickname?.let { svc.startMesh(it) }
             svc.setTrackingBeaconEnabled(_trackingBeaconEnabled.value)
+            svc.setVoiceRelayEnabled(_voiceRelayEnabled.value)
             _myPublicKeyHex.value = svc.myPublicKeyHex()
             _myNickname.value = svc.myNickname()
 
@@ -288,6 +301,36 @@ class MeshRepository private constructor(private val appContext: Context) {
         val myKey = svc.myPublicKeyHex() ?: return false
         val myNick = svc.myNickname() ?: myKey.take(8)
         val id = svc.sendDirectContent(recipientPubKeyHex, content) ?: return false
+        scope.launch {
+            db.messageDao().insert(
+                entityFor(id, "DM", myKey, myNick, recipientPubKeyHex, content, System.currentTimeMillis(), isMine = true)
+            )
+        }
+        return true
+    }
+
+    /** Sends a recorded PTT clip to the public feed. Relay reach (direct-only vs. mesh-wide) follows
+     * the current [voiceRelayEnabled] setting. */
+    fun sendPublicVoiceMessage(bytes: ByteArray, codec: AudioCodecId, sampleRateHz: Int, durationMs: Int) {
+        val svc = service ?: return
+        val myKey = svc.myPublicKeyHex() ?: return
+        val myNick = svc.myNickname() ?: return
+        val content = MessageContent.Audio(bytes, codec, sampleRateHz, durationMs)
+        val id = svc.sendPublicVoice(content, allowRelay = _voiceRelayEnabled.value) ?: return
+        scope.launch {
+            db.messageDao().insert(
+                entityFor(id, "PUBLIC", myKey, myNick, null, content, System.currentTimeMillis(), isMine = true)
+            )
+        }
+    }
+
+    /** Returns false if the recipient hasn't been seen on the mesh yet (no known agreement key). */
+    fun sendDirectVoiceMessage(recipientPubKeyHex: String, bytes: ByteArray, codec: AudioCodecId, sampleRateHz: Int, durationMs: Int): Boolean {
+        val svc = service ?: return false
+        val myKey = svc.myPublicKeyHex() ?: return false
+        val myNick = svc.myNickname() ?: myKey.take(8)
+        val content = MessageContent.Audio(bytes, codec, sampleRateHz, durationMs)
+        val id = svc.sendDirectVoice(recipientPubKeyHex, content, allowRelay = _voiceRelayEnabled.value) ?: return false
         scope.launch {
             db.messageDao().insert(
                 entityFor(id, "DM", myKey, myNick, recipientPubKeyHex, content, System.currentTimeMillis(), isMine = true)
@@ -368,6 +411,20 @@ class MeshRepository private constructor(private val appContext: Context) {
                     db.reactionDao().remove(event.originalMessageIdHex, event.reactorPubKeyHex)
                 }
             }
+            is MeshEvent.VoiceMessageReceived -> scope.launch {
+                val nickname = event.senderNickname.ifBlank { event.senderPubKeyHex.take(8) }
+                val type = if (event.isDirect) "DM" else "PUBLIC"
+                val peerKey = if (event.isDirect) event.senderPubKeyHex else null
+                db.messageDao().insert(
+                    entityFor(
+                        event.messageIdHex, type, event.senderPubKeyHex, nickname,
+                        peerKey, applyAttachmentPolicy(event.content), event.timestamp, isMine = false
+                    )
+                )
+                if (event.isDirect && !AppVisibility.isViewingDmThread(event.senderPubKeyHex)) {
+                    DmNotifier.notifyNewDm(appContext, event.senderPubKeyHex, nickname, "🔊 Voice message")
+                }
+            }
         }
     }
 
@@ -383,6 +440,7 @@ class MeshRepository private constructor(private val appContext: Context) {
             // thumbnail image is dropped, not the location itself.
             is MessageContent.Location -> content.copy(mapImageBytes = null, mapImageMime = null)
             is MessageContent.Text -> content
+            is MessageContent.Audio -> MessageContent.Text("🔊 Voice message (not received — attachments disabled in Settings)")
         }
     }
 
@@ -390,8 +448,9 @@ class MeshRepository private constructor(private val appContext: Context) {
         is MessageContent.Text -> content.body
         is MessageContent.Image -> "📷 Photo"
         is MessageContent.File -> "📎 ${content.filename}"
-        is MessageContent.Location -> "📍 Location"
-    }
+            is MessageContent.Location -> "📍 Location"
+            is MessageContent.Audio -> "🔊 Voice message"
+        }
 
     private fun entityFor(
         id: String,
@@ -420,11 +479,19 @@ class MeshRepository private constructor(private val appContext: Context) {
             mediaBytes = content.bytes, mediaMimeType = content.mime, mediaFilename = content.filename,
             timestamp = timestamp, isMine = isMine, delivered = true
         )
-        is MessageContent.Location -> MessageEntity(
+            is MessageContent.Location -> MessageEntity(
             id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
             peerPubKeyHex = peerKeyHex, contentType = "LOCATION", body = "Location",
             mediaBytes = content.mapImageBytes, mediaMimeType = content.mapImageMime,
             latitude = content.latitude, longitude = content.longitude,
+            timestamp = timestamp, isMine = isMine, delivered = true
+        )
+        is MessageContent.Audio -> MessageEntity(
+            id = id, type = type, senderPubKeyHex = senderKeyHex, senderNickname = senderNickname,
+            peerPubKeyHex = peerKeyHex, contentType = "VOICE", body = "Voice message",
+            mediaBytes = content.bytes,
+            mediaMimeType = if (content.codec == AudioCodecId.OPUS) "audio/opus" else "audio/amr",
+            mediaDurationMs = content.durationMs, mediaCodec = content.codec.name,
             timestamp = timestamp, isMine = isMine, delivered = true
         )
     }
@@ -433,6 +500,7 @@ class MeshRepository private constructor(private val appContext: Context) {
         private const val PREF_RECEIVE_ATTACHMENTS = "receive_attachments"
         private const val PREF_TRACKING_BEACON = "tracking_beacon"
         private const val PREF_FIND_FEATURE = "find_feature_enabled"
+        private const val PREF_VOICE_RELAY = "voice_relay_enabled"
 
         // Retry tuning: check every 25s, only retry messages older than 20s (give the first send
         // a moment to succeed normally) and younger than 10 minutes, capped at 5 attempts each —

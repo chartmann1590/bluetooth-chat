@@ -41,6 +41,10 @@ jobs:
           # strictly higher versionCode with no manual bump needed.
           APP_VERSION_CODE: ${{ github.run_number }}
           APP_VERSION_NAME: "1.0.${{ github.run_number }}"
+          # GitHub feedback reporter config (passed to Gradle as project properties)
+          ORG_GRADLE_PROJECT_github_api_token: ${{ secrets.GH_API_TOKEN }}
+          ORG_GRADLE_PROJECT_github_repo_owner: ${{ secrets.GH_REPO_OWNER }}
+          ORG_GRADLE_PROJECT_github_repo_name: ${{ secrets.GH_REPO_NAME }}
         run: ./gradlew assembleRelease bundleRelease --console=plain
 
       - name: Remove decoded keystore
