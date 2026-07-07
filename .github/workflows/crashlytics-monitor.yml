@@ -42,11 +42,16 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
-          ENCODED_APP_ID=$(echo "${FIREBASE_APP_ID}" | sed 's/:/%3A/g')
-          API_URL="https://firebasecrashlytics.googleapis.com/v1alpha/projects/${FIREBASE_PROJECT_NUMBER}/apps/${ENCODED_APP_ID}/reports/topIssues?pageSize=25"
-          curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" "${API_URL}" > crashlytics_issues.json
-          cat crashlytics_issues.json | jq .
-          if cat crashlytics_issues.json | jq -e '.error' > /dev/null 2>&1; then
+          API_URL="https://firebasecrashlytics.googleapis.com/v1alpha/projects/${FIREBASE_PROJECT_NUMBER}/apps/${FIREBASE_APP_ID}/reports/topIssues?page_size=25"
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o crashlytics_issues.json -H "Authorization: Bearer ${ACCESS_TOKEN}" "${API_URL}")
+          echo "HTTP status: ${HTTP_CODE}"
+          cat crashlytics_issues.json | jq . || true
+          if [ "${HTTP_CODE}" = "404" ]; then
+            echo "No Crashlytics data found for this app. The SDK may not be set up yet or no crashes have been reported."
+            echo '{"groups":[]}' > crashlytics_issues.json
+          elif [ "${HTTP_CODE}" != "200" ]; then
+            echo "Crashlytics API returned HTTP ${HTTP_CODE}"; exit 1
+          elif cat crashlytics_issues.json | jq -e '.error' > /dev/null 2>&1; then
             echo "Crashlytics API returned an error (see above)"; exit 1
           fi
 
