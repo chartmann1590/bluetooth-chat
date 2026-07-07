@@ -116,6 +116,7 @@ jobs:
                 `[🔥 View in Firebase Console](${url})`,
                 ``,
                 `<!-- crashlytics-events:${ci.eventCount} -->`,
+               `<!-- crashlytics-last-seen:${new Date().toISOString().split('T')[0]} -->`,
               ].filter(l => l !== '').join('\n');
             }
             try { await github.rest.issues.getLabel({ owner, repo, name: 'crashlytics' }); }
@@ -137,9 +138,13 @@ jobs:
               } else {
                 const prevMatch = (existing.body || '').match(/<!-- crashlytics-events:(\d+) -->/);
                 const prev = prevMatch ? parseInt(prevMatch[1], 10) : 0;
+                const today = new Date().toISOString().split('T')[0];
                 if (ci.eventCount > prev) {
                   await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: `📈 **Event count updated:** ${prev.toLocaleString()} → ${ci.eventCount.toLocaleString()} (+${(ci.eventCount - prev).toLocaleString()})\n- **Impacted users:** ${ci.impactedUsers.toLocaleString()}\n- **Last seen:** ${ci.lastSeenVersion}\n\n*Checked: ${new Date().toISOString()}*` });
-                  await github.rest.issues.update({ owner, repo, issue_number: existing.number, body: (existing.body || '').replace(/<!-- crashlytics-events:\d+ -->/, `<!-- crashlytics-events:${ci.eventCount} -->`) });
+                  let updatedBody = (existing.body || '')
+                    .replace(/<!-- crashlytics-events:\d+ -->/, `<!-- crashlytics-events:${ci.eventCount} -->`)
+                    .replace(/<!-- crashlytics-last-seen:\d{4}-\d{2}-\d{2} -->/, `<!-- crashlytics-last-seen:${today} -->`);
+                  await github.rest.issues.update({ owner, repo, issue_number: existing.number, body: updatedBody });
                   console.log(`Updated #${existing.number}: ${prev} → ${ci.eventCount} events`);
                 } else { console.log(`Issue #${existing.number} unchanged at ${ci.eventCount} events`); }
               }
