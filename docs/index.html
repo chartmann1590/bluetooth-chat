@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MeshTalk — Bluetooth Mesh Chat</title>
+<link rel="icon" type="image/png" href="icon-512.png">
 <style>
   :root {
     --bg: #0a0a0a;
@@ -75,13 +76,37 @@
     color: var(--text-muted); font-size: 0.85rem;
   }
   footer a { color: var(--text-muted); }
+  .header-row { display: flex; align-items: center; gap: 20px; margin-bottom: 4px; }
+  .header-row img { width: 76px; height: 76px; border-radius: 18px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); flex-shrink: 0; }
+  .header-row h1 { margin: 0; }
+  .video-wrap {
+    margin-top: 32px; border-radius: 16px; overflow: hidden; border: 1px solid var(--surface-variant);
+    background: var(--surface); max-width: 360px;
+  }
+  .video-wrap video { display: block; width: 100%; height: auto; }
+  .shots {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px; margin-top: 16px;
+  }
+  .shots img {
+    width: 100%; border-radius: 10px; border: 1px solid var(--surface-variant); display: block;
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="badge">no internet · no accounts · no server</div>
-  <h1>MeshTalk</h1>
+  <div class="header-row">
+    <img src="icon-512.png" alt="MeshTalk app icon">
+    <h1>MeshTalk</h1>
+  </div>
   <p class="tagline">A Bluetooth mesh chat app for Android. Nearby phones find each other and message directly — messages hop through the mesh to reach beyond a single Bluetooth connection.</p>
+
+  <div class="video-wrap">
+    <video controls preload="metadata" poster="screenshots/onboarding.png">
+      <source src="promo-video.mp4" type="video/mp4">
+    </video>
+  </div>
 
   <h2>How it works</h2>
   <p>Every phone advertises and scans for other MeshTalk phones over Bluetooth Low Energy at the same time. When two phones come within range, they exchange signed, optionally encrypted packets directly — no pairing dialog, no internet connection, no account. Messages carry a hop limit and relay through other nearby phones to extend range past a single Bluetooth connection.</p>
@@ -127,6 +152,16 @@
       <h3>Walkie-Talkie <span style="opacity:.6">(paid)</span></h3>
       <p>Push-to-talk voice messages over the same offline Bluetooth mesh — hold to record, release to send. Direct-to-recipient by default, with an opt-in mesh-relay setting. Unlocked with a one-time purchase or a monthly subscription with a 3-day free trial.</p>
     </div>
+  </div>
+
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <img src="screenshots/public-feed-location-readreceipt.png" alt="Public feed with location share and read receipt">
+    <img src="screenshots/dm-thread-read-receipt.png" alt="Encrypted DM thread with photo and location">
+    <img src="screenshots/ai-chat-gpu-response.png" alt="On-device AI chat">
+    <img src="screenshots/find-bluetooth-proximity.png" alt="Bluetooth radar">
+    <img src="screenshots/walkie-talkie-paywall.png" alt="Walkie-Talkie feature">
+    <img src="screenshots/settings.png" alt="Settings screen">
   </div>
 
   <h2>Get it</h2>

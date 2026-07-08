@@ -73,13 +73,29 @@ class PlayBillingRepository(private val appContext: Context) : BillingRepository
     }
 
     private suspend fun queryProductDetails() {
-        val params = QueryProductDetailsParams.newBuilder()
+        // Billing Library v7 requires every queryProductDetails() call to list products of a
+        // single type only (mixing INAPP + SUBS in one call throws IllegalArgumentException) — so
+        // the lifetime (INAPP) and subscription (SUBS) lookups have to be two separate queries.
+        val inappParams = QueryProductDetailsParams.newBuilder()
             .setProductList(
                 listOf(
                     QueryProductDetailsParams.Product.newBuilder()
                         .setProductId(PRODUCT_ID_LIFETIME)
                         .setProductType(BillingClient.ProductType.INAPP)
-                        .build(),
+                        .build()
+                )
+            )
+            .build()
+        val inappResult = billingClient.queryProductDetails(inappParams)
+        if (inappResult.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+            lifetimeProduct = inappResult.productDetailsList.orEmpty().firstOrNull()
+        } else {
+            Log.w(TAG, "queryProductDetails (INAPP) failed: ${inappResult.billingResult.debugMessage}")
+        }
+
+        val subsParams = QueryProductDetailsParams.newBuilder()
+            .setProductList(
+                listOf(
                     QueryProductDetailsParams.Product.newBuilder()
                         .setProductId(PRODUCT_ID_SUBSCRIPTION)
                         .setProductType(BillingClient.ProductType.SUBS)
@@ -87,25 +103,16 @@ class PlayBillingRepository(private val appContext: Context) : BillingRepository
                 )
             )
             .build()
-
-        val result = billingClient.queryProductDetails(params)
-        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "queryProductDetails failed: ${result.billingResult.debugMessage}")
-            return
-        }
-        for (product in result.productDetailsList.orEmpty()) {
-            when (product.productType) {
-                BillingClient.ProductType.INAPP -> lifetimeProduct = product
-                BillingClient.ProductType.SUBS -> {
-                    subscriptionProduct = product
-                    // The base plan's offer already carries the 3-day free-trial pricing phase
-                    // configured in Play Console — no separate "start trial" call is needed;
-                    // Play grants it automatically the first time this offer token is used,
-                    // and refuses to re-grant a trial to a user who already had one.
-                    subscriptionOfferToken = product.subscriptionOfferDetails?.firstOrNull()?.offerToken
-                }
-                else -> Unit
-            }
+        val subsResult = billingClient.queryProductDetails(subsParams)
+        if (subsResult.billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+            subscriptionProduct = subsResult.productDetailsList.orEmpty().firstOrNull()
+            // The base plan's offer already carries the 3-day free-trial pricing phase configured
+            // in Play Console — no separate "start trial" call is needed; Play grants it
+            // automatically the first time this offer token is used, and refuses to re-grant a
+            // trial to a user who already had one.
+            subscriptionOfferToken = subscriptionProduct?.subscriptionOfferDetails?.firstOrNull()?.offerToken
+        } else {
+            Log.w(TAG, "queryProductDetails (SUBS) failed: ${subsResult.billingResult.debugMessage}")
         }
     }
 

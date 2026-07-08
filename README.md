@@ -1,8 +1,12 @@
+<img src="play-store/graphics/icon/ic_launcher_512.png" width="88" align="left" alt="MeshTalk icon">
+
 # MeshTalk
 
 MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE) instead of the internet. Nearby phones running the app find each other automatically — no pairing, no accounts, no server — and relay messages through each other to reach further than a single Bluetooth hop.
 
-📄 [Privacy Policy & project site](https://chartmann1590.github.io/bluetooth-chat/)
+<br clear="left">
+
+📄 [Privacy Policy & project site](https://chartmann1590.github.io/bluetooth-chat/) · 🎬 [30-second demo video](play-store/promo-video/meshtalk-promo.mp4)
 
 ## Features
 
@@ -54,7 +58,7 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 </tr>
 <tr>
 <td><img src="docs/screenshots/ai-chat-history.png" width="220" alt="On-device AI chat history dialog"><br><sub>AI chat: saved history</sub></td>
-<td></td>
+<td><img src="docs/screenshots/walkie-talkie-paywall.png" width="220" alt="Walkie-Talkie paywall screen"><br><sub>Walkie-Talkie (paid)</sub></td>
 <td></td>
 </tr>
 </table>
@@ -118,6 +122,13 @@ The `play` flavor references two product IDs that must be created by hand in [Pl
 4. From then on, every CI build's AAB artifact can be uploaded to that track (or a higher one) the same way; this step isn't automated yet.
 
 No other configuration is needed on the app side — `PlayBillingRepository` (`app/src/play/java/.../billing/`) already references those exact product IDs, and Play itself is the entitlement source of truth.
+
+### Play Store listing assets
+
+Everything needed for the actual Play Console listing — title/description copy, the hi-res icon,
+feature graphic, phone/7in-tablet/10in-tablet screenshots, and a narrated promo video with
+burned-in captions — lives in [`play-store/`](play-store/), organized to match Play Console's own
+upload sections. See [`play-store/README.md`](play-store/README.md) for what's where.
 
 ## Project structure
 
