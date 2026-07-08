@@ -1,0 +1,16 @@
+name = "meshtalk-billing"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+kv_namespaces = [
+  { binding = "ENTITLEMENTS", id = "4536429dd7364d80bfc5204d587374c7" }
+]
+
+# Secrets (set via `wrangler secret put <NAME>`, never committed here):
+#   STRIPE_SECRET_KEY                    Stripe secret key (live or test, matching the Price IDs below)
+#   STRIPE_WEBHOOK_SECRET                Signing secret from the Stripe webhook endpoint for this Worker's URL
+#   ENTITLEMENT_SIGNING_PRIVATE_KEY_HEX  32-byte Ed25519 seed, hex-encoded
+#   ENTITLEMENT_SIGNING_PUBLIC_KEY_HEX   32-byte Ed25519 public key, hex-encoded (also embedded in
+#                                        the app's github-flavor BuildConfig for local verification)
+#   STRIPE_PRICE_LIFETIME                Stripe Price ID for the one-time purchase
+#   STRIPE_PRICE_MONTHLY                 Stripe Price ID for the monthly subscription

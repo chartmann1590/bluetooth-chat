@@ -18,11 +18,13 @@ data class MessageEntity(
     val senderPubKeyHex: String,
     val senderNickname: String,
     val peerPubKeyHex: String?, // null for PUBLIC; the other party's key for DM
-    val contentType: String = "TEXT", // "TEXT", "IMAGE", "FILE", or "LOCATION"
+    val contentType: String = "TEXT", // "TEXT", "IMAGE", "FILE", "LOCATION", or "VOICE"
     val body: String, // text body for TEXT, a short display caption otherwise
-    val mediaBytes: ByteArray? = null, // raw bytes for IMAGE/FILE, or a static map thumbnail for LOCATION
+    val mediaBytes: ByteArray? = null, // raw bytes for IMAGE/FILE/VOICE, or a static map thumbnail for LOCATION
     val mediaMimeType: String? = null,
     val mediaFilename: String? = null, // FILE only
+    val mediaDurationMs: Int? = null, // VOICE only
+    val mediaCodec: String? = null, // VOICE only: "OPUS" or "AMR_NB"
     val latitude: Double? = null, // LOCATION only
     val longitude: Double? = null, // LOCATION only
     val timestamp: Long,

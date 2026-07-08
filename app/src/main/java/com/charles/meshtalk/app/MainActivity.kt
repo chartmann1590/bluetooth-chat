@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,8 +40,12 @@ import com.charles.meshtalk.app.repository.MeshRepository
 import com.charles.meshtalk.app.ui.MeshTalkApp
 import com.charles.meshtalk.app.ui.OnboardingScreen
 import com.charles.meshtalk.app.ui.theme.MeshTalkTheme
+import kotlinx.coroutines.launch
 
 const val EXTRA_OPEN_DM_PEER_KEY = "open_dm_peer_key"
+/** Value is [com.charles.meshtalk.app.notifications.VoiceNotifier.TARGET_PUBLIC] or a peer's
+ * signing-pubkey hex — set when a voice-message notification is tapped. */
+const val EXTRA_OPEN_WALKIE_TALKIE_TARGET = "open_walkie_talkie_target"
 private const val PREFS_NAME = "meshtalk_prefs"
 private const val PREF_BATTERY_PROMPT_SEEN = "battery_prompt_seen"
 private const val PREF_AI_PROMPT_SEEN = "ai_download_prompt_seen"
@@ -70,11 +75,15 @@ fun isIgnoringBatteryOptimizations(context: Context): Boolean {
 
 class MainActivity : ComponentActivity() {
     private val pendingDmPeerKeyState: MutableState<String?> = mutableStateOf(null)
+    private val pendingWalkieTalkieTargetState: MutableState<String?> = mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        FirebaseHelper.get(applicationContext).init()
         val repository = MeshRepository.get(applicationContext)
         pendingDmPeerKeyState.value = intent?.getStringExtra(EXTRA_OPEN_DM_PEER_KEY)
+        pendingWalkieTalkieTargetState.value = intent?.getStringExtra(EXTRA_OPEN_WALKIE_TALKIE_TARGET)
+        handleBillingDeepLink(intent)
 
         setContent {
             val requiredPerms = remember { requiredBluetoothPermissions() }
@@ -135,9 +144,11 @@ class MainActivity : ComponentActivity() {
                     } else {
                         LaunchedEffect(Unit) { repository.start("") }
                         val pendingDmPeerKey by pendingDmPeerKeyState
+                        val pendingWalkieTalkieTarget by pendingWalkieTalkieTargetState
                         MeshTalkApp(
-                            repository, pendingDmPeerKey,
-                            onDeepLinkConsumed = { pendingDmPeerKeyState.value = null }
+                            repository, pendingDmPeerKey, pendingWalkieTalkieTarget,
+                            onDeepLinkConsumed = { pendingDmPeerKeyState.value = null },
+                            onWalkieTalkieDeepLinkConsumed = { pendingWalkieTalkieTargetState.value = null }
                         )
                     }
                 }
@@ -151,6 +162,20 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(EXTRA_OPEN_DM_PEER_KEY)?.let { peerKey ->
             pendingDmPeerKeyState.value = peerKey
         }
+        intent.getStringExtra(EXTRA_OPEN_WALKIE_TALKIE_TARGET)?.let { target ->
+            pendingWalkieTalkieTargetState.value = target
+        }
+        handleBillingDeepLink(intent)
+    }
+
+    /** Fires on the `meshtalk://billing/success` redirect after Stripe Checkout completes
+     * (github/Stripe flavor only — the intent-filter registering this scheme only exists in that
+     * flavor's manifest overlay, so this is unreachable on the play flavor). */
+    private fun handleBillingDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "meshtalk" || uri.host != "billing") return
+        val billing = com.charles.meshtalk.app.billing.BillingRepositoryProvider.create(applicationContext)
+        lifecycleScope.launch { billing.onExternalCheckoutReturned() }
     }
 
     override fun onStart() {

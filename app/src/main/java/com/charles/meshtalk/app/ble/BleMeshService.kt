@@ -87,6 +87,12 @@ class BleMeshService : Service() {
 
     private var trackingBeaconEnabled = false
 
+    // Whether this device is willing to relay *other* peers' voice packets onward. Independent of
+    // whatever TTL a peer chose for their own outgoing voice message — this only gates what we do
+    // with someone else's VOICE packet in transit, letting bandwidth/privacy-conscious users opt out
+    // of spending their own airtime relaying others' audio even when TTL would otherwise allow it.
+    private var voiceRelayEnabled = false
+
     private var identity: Identity? = null
     private var meshEngine: MeshEngine? = null
 
@@ -390,6 +396,10 @@ class BleMeshService : Service() {
         startAdvertising(adapter)
     }
 
+    fun setVoiceRelayEnabled(enabled: Boolean) {
+        voiceRelayEnabled = enabled
+    }
+
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartFailure(errorCode: Int) {
             Log.w(TAG, "Advertising failed to start: $errorCode")
@@ -548,7 +558,17 @@ class BleMeshService : Service() {
             refreshPeerRssi()
         }
         event?.let { _events.tryEmit(it) }
-        result.relayBytes?.let { relay -> broadcastToAllLinks(relay) }
+        result.relayBytes?.let { relay ->
+            // Voice packets are far larger than everything else this mesh carries; let a node opt
+            // out of spending its own airtime relaying other peers' audio even though TTL allows it.
+            // Checked against the packet's actual type (not `event`), since a DM voice message meant
+            // for someone else yields event=null but must still be gated the same way.
+            if (result.packetType == PacketType.VOICE && !voiceRelayEnabled) {
+                Log.d(TAG, "onChunkReceived: dropping voice relay, voiceRelayEnabled=false")
+            } else {
+                broadcastToAllLinks(relay)
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -610,6 +630,25 @@ class BleMeshService : Service() {
 
     fun knowsAgreementKeyFor(recipientSigningPubKeyHex: String): Boolean =
         meshEngine?.agreementKeyFor(recipientSigningPubKeyHex) != null
+
+    /** [allowRelay] false (the default) sends with TTL=1, so the clip only ever reaches directly
+     * connected peers; true uses a shorter-than-default relay TTL (voice clips are far larger than
+     * text, so multi-hop relaying them costs proportionally more mesh bandwidth per hop). Returns
+     * the sent message's id (hex) so callers can record it locally, or null on failure. */
+    fun sendPublicVoice(content: MessageContent.Audio, allowRelay: Boolean): String? {
+        val ttl = if (allowRelay) MeshEngine.VOICE_RELAY_TTL else MeshEngine.VOICE_DIRECT_TTL
+        val bytes = meshEngine?.createVoiceMessage(content, ttl, recipientSigningPubKeyHex = null) ?: return null
+        broadcastToAllLinks(bytes)
+        return PacketCodec.deserialize(bytes)?.messageIdHex
+    }
+
+    /** Returns null if we don't yet know the recipient's agreement key (no ANNOUNCE seen yet). */
+    fun sendDirectVoice(recipientSigningPubKeyHex: String, content: MessageContent.Audio, allowRelay: Boolean): String? {
+        val ttl = if (allowRelay) MeshEngine.VOICE_RELAY_TTL else MeshEngine.VOICE_DIRECT_TTL
+        val bytes = meshEngine?.createVoiceMessage(content, ttl, recipientSigningPubKeyHex) ?: return null
+        broadcastToAllLinks(bytes)
+        return PacketCodec.deserialize(bytes)?.messageIdHex
+    }
 
     /** Re-broadcasts a previously sent message's original signed bytes, e.g. because it hasn't
      * been read yet and we now have a live link. Returns false if the bytes have aged out of the

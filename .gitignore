@@ -15,3 +15,4 @@ app/build/
 *.jks
 *.keystore
 .claude/
+app/google-services.json

@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.charles.meshtalk.app.AppVisibility
+import com.charles.meshtalk.app.FirebaseHelper
 import com.charles.meshtalk.app.ble.BleMeshService
 import com.charles.meshtalk.app.ble.AudioCodecId
 import com.charles.meshtalk.app.ble.MeshEvent
@@ -18,6 +19,7 @@ import com.charles.meshtalk.app.data.MessageEntity
 import com.charles.meshtalk.app.data.ReactionEntity
 import com.charles.meshtalk.app.data.ReadReceiptEntity
 import com.charles.meshtalk.app.notifications.DmNotifier
+import com.charles.meshtalk.app.notifications.VoiceNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -129,6 +131,27 @@ class MeshRepository private constructor(private val appContext: Context) {
         prefs.edit().putBoolean(PREF_VOICE_RELAY, enabled).apply()
         _voiceRelayEnabled.value = enabled
         service?.setVoiceRelayEnabled(enabled)
+    }
+
+    // Off by default: DM voice messages always notify (like text DMs), but the public feed can
+    // have many senders, so notifying on every public voice clip is opt-in.
+    private val _publicVoiceNotificationsEnabled = MutableStateFlow(prefs.getBoolean(PREF_PUBLIC_VOICE_NOTIFICATIONS, false))
+    val publicVoiceNotificationsEnabled: StateFlow<Boolean> = _publicVoiceNotificationsEnabled.asStateFlow()
+
+    fun setPublicVoiceNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_PUBLIC_VOICE_NOTIFICATIONS, enabled).apply()
+        _publicVoiceNotificationsEnabled.value = enabled
+    }
+
+    private val _analyticsCrashlyticsEnabled = MutableStateFlow(
+        prefs.getBoolean(PREF_ANALYTICS_CRASHLYTICS_ENABLED, true)
+    )
+    val analyticsCrashlyticsEnabled: StateFlow<Boolean> = _analyticsCrashlyticsEnabled.asStateFlow()
+
+    fun setAnalyticsCrashlyticsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_ANALYTICS_CRASHLYTICS_ENABLED, enabled).apply()
+        _analyticsCrashlyticsEnabled.value = enabled
+        FirebaseHelper.get(appContext).setEnabled(enabled)
     }
 
     // Local-only policy: still relayed to other mesh peers regardless of this setting (that's
@@ -421,8 +444,13 @@ class MeshRepository private constructor(private val appContext: Context) {
                         peerKey, applyAttachmentPolicy(event.content), event.timestamp, isMine = false
                     )
                 )
-                if (event.isDirect && !AppVisibility.isViewingDmThread(event.senderPubKeyHex)) {
-                    DmNotifier.notifyNewDm(appContext, event.senderPubKeyHex, nickname, "🔊 Voice message")
+                // Voice notifications always deep-link into the Walkie-Talkie tab, never the text
+                // DM thread (which doesn't show voice clips at all). DMs always notify; the public
+                // feed is opt-in since it can otherwise be noisy with many senders.
+                if (event.isDirect) {
+                    VoiceNotifier.notifyNewVoice(appContext, event.senderPubKeyHex, nickname)
+                } else if (_publicVoiceNotificationsEnabled.value) {
+                    VoiceNotifier.notifyNewVoice(appContext, VoiceNotifier.TARGET_PUBLIC, nickname)
                 }
             }
         }
@@ -501,6 +529,8 @@ class MeshRepository private constructor(private val appContext: Context) {
         private const val PREF_TRACKING_BEACON = "tracking_beacon"
         private const val PREF_FIND_FEATURE = "find_feature_enabled"
         private const val PREF_VOICE_RELAY = "voice_relay_enabled"
+        private const val PREF_PUBLIC_VOICE_NOTIFICATIONS = "public_voice_notifications_enabled"
+        private const val PREF_ANALYTICS_CRASHLYTICS_ENABLED = "analytics_crashlytics_enabled"
 
         // Retry tuning: check every 25s, only retry messages older than 20s (give the first send
         // a moment to succeed normally) and younger than 10 minutes, capped at 5 attempts each —

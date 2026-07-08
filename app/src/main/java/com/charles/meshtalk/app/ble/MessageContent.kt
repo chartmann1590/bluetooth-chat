@@ -13,6 +13,22 @@ sealed class MessageContent {
         val mapImageBytes: ByteArray? = null,
         val mapImageMime: String? = null
     ) : MessageContent()
+    data class Audio(
+        val bytes: ByteArray,
+        val codec: AudioCodecId,
+        val sampleRateHz: Int,
+        val durationMs: Int
+    ) : MessageContent()
+}
+
+/** Which codec a [MessageContent.Audio] clip was encoded with, so a receiver can pick the matching decoder. */
+enum class AudioCodecId(val code: Byte) {
+    OPUS(0),
+    AMR_NB(1);
+
+    companion object {
+        fun fromCode(code: Byte): AudioCodecId = entries.first { it.code == code }
+    }
 }
 
 /**
@@ -24,12 +40,14 @@ sealed class MessageContent {
  *   FILE:     [mimeLen(1)][mime utf8][filenameLen(1)][filename utf8][file bytes]
  *   LOCATION: [latitude(8 double)][longitude(8 double)][hasImage(1)]
  *             if hasImage: [mimeLen(1)][mime utf8][map image bytes]
+ *   AUDIO:    [codec(1)][sampleRateHz(4)][durationMs(4)][audio bytes]
  */
 object MessageContentCodec {
     private const val KIND_TEXT: Byte = 0
     private const val KIND_IMAGE: Byte = 1
     private const val KIND_FILE: Byte = 2
     private const val KIND_LOCATION: Byte = 3
+    private const val KIND_AUDIO: Byte = 4
 
     fun encode(content: MessageContent): ByteArray = when (content) {
         is MessageContent.Text -> {
@@ -78,6 +96,15 @@ object MessageContentCodec {
                 }
             }.array()
         }
+        is MessageContent.Audio -> {
+            ByteBuffer.allocate(1 + 1 + 4 + 4 + content.bytes.size).apply {
+                put(KIND_AUDIO)
+                put(content.codec.code)
+                putInt(content.sampleRateHz)
+                putInt(content.durationMs)
+                put(content.bytes)
+            }.array()
+        }
     }
 
     fun decode(bytes: ByteArray): MessageContent? {
@@ -115,6 +142,13 @@ object MessageContentCodec {
                     } else {
                         MessageContent.Location(lat, lng, null, null)
                     }
+                }
+                KIND_AUDIO -> {
+                    val codec = AudioCodecId.fromCode(buffer.get())
+                    val sampleRateHz = buffer.int
+                    val durationMs = buffer.int
+                    val data = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                    MessageContent.Audio(data, codec, sampleRateHz, durationMs)
                 }
                 else -> null
             }

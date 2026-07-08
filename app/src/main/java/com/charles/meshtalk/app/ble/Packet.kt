@@ -8,7 +8,8 @@ enum class PacketType(val code: Byte) {
     TYPING(5),
     EDIT(6),
     DELETE(7),
-    REACTION(8);
+    REACTION(8),
+    VOICE(9);
 
     companion object {
         fun fromCode(code: Byte): PacketType = entries.first { it.code == code }
@@ -19,7 +20,8 @@ enum class PacketType(val code: Byte) {
 val BROADCAST_KEY: ByteArray = ByteArray(32)
 
 // v5: added EDIT/DELETE/REACTION packet types for message actions.
-const val PACKET_VERSION: Byte = 5
+// v6: added VOICE packet type for push-to-talk voice messages.
+const val PACKET_VERSION: Byte = 6
 
 /**
  * A single mesh packet. `senderSigningPubKey` is the sender's persistent

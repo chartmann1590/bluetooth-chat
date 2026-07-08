@@ -64,6 +64,15 @@ sealed class MeshEvent {
         val added: Boolean,
         val timestamp: Long
     ) : MeshEvent()
+
+    data class VoiceMessageReceived(
+        val senderPubKeyHex: String,
+        val senderNickname: String,
+        val messageIdHex: String,
+        val content: MessageContent.Audio,
+        val timestamp: Long,
+        val isDirect: Boolean
+    ) : MeshEvent()
 }
 
 /**
@@ -79,7 +88,15 @@ class MeshEngine(private val identity: Identity) {
         // Typing indicators only need to reach immediate/near neighbors quickly; a short TTL
         // bounds how far a duplicate can loop before dying out (see ephemeralDedup below).
         const val TYPING_TTL = 2
+        // Voice clips (tens of KB) are far larger than typical text/action packets, so the default
+        // relay hop count is intentionally shorter to limit how much mesh bandwidth one clip can consume.
+        const val VOICE_DIRECT_TTL = 1
+        const val VOICE_RELAY_TTL = 3
         private const val CACHE_CAPACITY = 500
+        // Secondary, byte-volume-based cap: 500 small text packets is a very different memory/replay
+        // footprint than 500 ~60KB voice clips. This bounds how much a burst of voice messages can
+        // bloat the payload replayed in full to every newly-connected peer.
+        private const val CACHE_MAX_BYTES = 2 * 1024 * 1024
         private const val EPHEMERAL_DEDUP_CAPACITY = 200
     }
 
@@ -91,8 +108,11 @@ class MeshEngine(private val identity: Identity) {
     // Bounded LRU of recently seen/sent raw packet bytes, keyed by messageId hex. Replayed to
     // newly-connected peers via packetsForNewPeer(), so only durable content goes in here.
     private val cache = Collections.synchronizedMap(object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?): Boolean =
-            size > CACHE_CAPACITY
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?): Boolean {
+            val evict = size > CACHE_CAPACITY
+            if (evict && eldest != null) cacheBytes -= eldest.value.size
+            return evict
+        }
     })
 
     // Separate, smaller dedup-only record for ephemeral packets (currently just TYPING) that
@@ -197,6 +217,14 @@ class MeshEngine(private val identity: Identity) {
     fun createDelete(targetMessageIdHex: String, recipientSigningPubKeyHex: String?): ByteArray? =
         buildActionPacket(PacketType.DELETE, targetMessageIdHex.hexToBytes(), recipientSigningPubKeyHex)
 
+    /** `recipientSigningPubKeyHex` null = public voice broadcast (plaintext, signed); non-null = a
+     * voice DM, encrypted the same way a text DM is. `ttl` is caller-controlled (rather than the
+     * fixed [DEFAULT_TTL] other action packets use) so direct-only vs. mesh-relay delivery can be
+     * chosen per the user's "relay voice through mesh" setting. Returns null if we don't know the
+     * DM recipient's agreement key yet. */
+    fun createVoiceMessage(content: MessageContent.Audio, ttl: Int, recipientSigningPubKeyHex: String?): ByteArray? =
+        buildActionPacket(PacketType.VOICE, MessageContentCodec.encode(content), recipientSigningPubKeyHex, ttl)
+
     fun createReaction(
         targetMessageIdHex: String, emoji: String, added: Boolean, recipientSigningPubKeyHex: String?
     ): ByteArray? {
@@ -213,7 +241,12 @@ class MeshEngine(private val identity: Identity) {
      * feed, or encrypted the same way a DM is for a specific recipient. Remembered in the replay
      * cache like any durable content (a newly-connected peer should still learn about edits/
      * deletes/reactions that happened while they were away). */
-    private fun buildActionPacket(type: PacketType, plainPayload: ByteArray, recipientSigningPubKeyHex: String?): ByteArray? {
+    private fun buildActionPacket(
+        type: PacketType,
+        plainPayload: ByteArray,
+        recipientSigningPubKeyHex: String?,
+        ttl: Int = DEFAULT_TTL
+    ): ByteArray? {
         val recipientKey: ByteArray
         val payload: ByteArray
         if (recipientSigningPubKeyHex == null) {
@@ -230,7 +263,7 @@ class MeshEngine(private val identity: Identity) {
                 put(ciphertext)
             }.array()
         }
-        val packet = PacketCodec.buildAndSign(identity, type, DEFAULT_TTL, recipientKey, payload)
+        val packet = PacketCodec.buildAndSign(identity, type, ttl, recipientKey, payload)
         val bytes = PacketCodec.serialize(packet)
         remember(packet.messageIdHex, bytes)
         return bytes
@@ -249,8 +282,10 @@ class MeshEngine(private val identity: Identity) {
         }
     }
 
-    /** Result of processing an inbound raw (reassembled) packet. */
-    data class Result(val event: MeshEvent?, val relayBytes: ByteArray?)
+    /** Result of processing an inbound raw (reassembled) packet. [packetType] is set whenever the
+     * packet is otherwise valid (even if [event] is null because it's a DM meant for someone else),
+     * so callers can gate relay behavior on packet type without re-parsing [relayBytes] themselves. */
+    data class Result(val event: MeshEvent?, val relayBytes: ByteArray?, val packetType: PacketType? = null)
 
     fun handleIncoming(rawBytes: ByteArray): Result {
         val packet = PacketCodec.deserialize(rawBytes) ?: return Result(null, null)
@@ -373,6 +408,25 @@ class MeshEngine(private val identity: Identity) {
                     }
                 } else null
             }
+            PacketType.VOICE -> {
+                val isPublic = packet.recipientSigningPubKey.contentEquals(BROADCAST_KEY)
+                val isForMe = packet.recipientSigningPubKey.contentEquals(identity.signingPublicKey)
+                if (isPublic || isForMe) {
+                    val plain = if (isPublic) packet.payload else decryptDmPayload(packet.payload)
+                    val content = plain?.let { MessageContentCodec.decode(it) } as? MessageContent.Audio
+                    if (content == null) null else {
+                        val senderHex = packet.senderSigningPubKey.toHex()
+                        MeshEvent.VoiceMessageReceived(
+                            senderHex,
+                            nicknames[senderHex] ?: senderHex.take(8),
+                            packet.messageIdHex,
+                            content,
+                            packet.timestamp,
+                            isDirect = !isPublic
+                        )
+                    }
+                } else null // a DM voice message meant for someone else; just relay
+            }
         }
 
         val newTtl = packet.ttl - 1
@@ -381,10 +435,23 @@ class MeshEngine(private val identity: Identity) {
             PacketCodec.serialize(packet)
         } else null
 
-        return Result(event, relayBytes)
+        return Result(event, relayBytes, packet.type)
     }
 
     private fun remember(messageIdHex: String, bytes: ByteArray) {
-        cache[messageIdHex] = bytes
+        synchronized(cache) {
+            cache[messageIdHex]?.let { cacheBytes -= it.size }
+            cache[messageIdHex] = bytes
+            cacheBytes += bytes.size
+            while (cacheBytes > CACHE_MAX_BYTES && cache.isNotEmpty()) {
+                val eldestKey = cache.keys.first()
+                cache.remove(eldestKey)?.let { cacheBytes -= it.size }
+            }
+        }
     }
+
+    // Tracked alongside `cache`'s own entry-count-based eviction to additionally bound total
+    // replay-cache byte volume (see CACHE_MAX_BYTES) now that voice clips can be far larger than
+    // a typical text/action packet.
+    private var cacheBytes = 0
 }

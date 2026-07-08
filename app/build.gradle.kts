@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services") apply false
+    id("com.google.firebase.crashlytics") apply false
+    id("com.google.firebase.firebase-perf") apply false
 }
 
 // Release signing comes from environment variables (set by CI from GitHub Secrets) rather than a
@@ -75,6 +78,33 @@ android {
         }
     }
 
+    // Two distribution channels, kept completely separate: "play" uses Google Play Billing (the
+    // only billing option Play Store policy allows for a digital feature like walkie-talkie);
+    // "github" is the sideloaded build, which cannot use Play Billing at all and instead talks to
+    // a Cloudflare Worker + Stripe for payment. Each flavor's billing implementation lives in its
+    // own source set (src/play/..., src/github/...) behind the shared BillingRepository interface,
+    // so neither flavor's dependencies or code ever ship in the other's build.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+        }
+        create("github") {
+            dimension = "distribution"
+            // Lets both flavors install side-by-side on the same test device — this channel is
+            // never uploaded to Play, so the differing package id has no downside.
+            applicationIdSuffix = ".github"
+
+            // Cloudflare Worker base URL (public, non-secret) and the Ed25519 *public* key used to
+            // verify entitlement tokens locally offline — never the Worker's own secrets, which
+            // live only in the Worker's own deployment (see cloudflare-worker/wrangler.toml).
+            buildConfigField("String", "CLOUDFLARE_WORKER_BASE_URL",
+                "\"${feedbackProp("cloudflare.worker.url") ?: ""}\"")
+            buildConfigField("String", "ENTITLEMENT_VERIFY_PUBLIC_KEY_HEX",
+                "\"${feedbackProp("entitlement.verify.public.key.hex") ?: ""}\"")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -91,6 +121,15 @@ android {
             excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
+}
+
+// google-services.json only registers an app for the "play" flavor's applicationId — the
+// "github" flavor's whole point is not depending on Google services, so its build shouldn't
+// require (or expect) a matching Firebase app registration. Without this, the google-services
+// plugin fails the github build outright ("No matching client found").
+afterEvaluate {
+    tasks.matching { it.name.startsWith("processGithub") && it.name.endsWith("GoogleServices") }
+        .configureEach { enabled = false }
 }
 
 dependencies {
@@ -125,13 +164,32 @@ dependencies {
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
 
+    // Firebase
+    implementation(platform("com.google.firebase:firebase-bom:33.9.0"))
+    implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
+    implementation("com.google.firebase:firebase-perf-ktx")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+
+    // Play flavor: Google Play Billing for the one-time purchase + subscription-with-trial.
+    "playImplementation"("com.android.billingclient:billing-ktx:7.1.1")
+    // Github flavor: opens the Cloudflare Worker's Stripe Checkout URL in a Custom Tab; the
+    // Retrofit/OkHttp/kotlinx-serialization deps it needs for talking to the Worker are already
+    // shared dependencies above (used by the feedback feature), so nothing extra needed there.
+    "githubImplementation"("androidx.browser:browser:1.8.0")
 }
 
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
+}
+
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+    apply(plugin = "com.google.firebase.firebase-perf")
 }

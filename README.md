@@ -22,6 +22,7 @@ MeshTalk is a native Android chat app that talks over Bluetooth Low Energy (BLE)
 - **Offline map caching** — map images (for shared locations and the radar backdrop) are cached to disk the first time they're fetched, keyed by a coarse lat/lon grid cell, so viewing the same area again later works with no internet.
 - **On-device AI download during onboarding** — new installs are offered a one-tap opt-in to start the Gemma 4 download right away (continues in the background regardless of which screen you're on); skip it and download later from the AI tab instead.
 - **Message actions** — long-press any message (public feed or DM) to copy its text, react with an emoji, or — for your own messages — edit or delete it. Edits, deletes, and reactions all sync to everyone else on the mesh: only the original sender can edit/delete their own message (enforced both locally and by every recipient verifying the sender before applying it), and anyone can add or remove their own reaction.
+- **Walkie-Talkie (paid)** — push-to-talk voice messages over the same offline Bluetooth mesh as chat (Opus, 32kbps/24kHz). Hold the mic button to record, release to send; delivery is direct-to-recipient by default, with an opt-in Settings toggle to relay voice through the mesh like text (voice clips are much larger, so this is off by default). Only the most recent clip matters — the Public tab shows one row per sender (their latest transmission), and a DM shows just the single latest exchange, not a scrollback. Receiving a voice message triggers a notification (DMs always notify; the public feed is opt-in) that deep-links straight into the Walkie-Talkie tab. Unlocked with a one-time purchase or a monthly subscription with a 3-day free trial — see [Distribution & billing](#distribution--billing) below.
 
 ## Screenshots
 
@@ -75,6 +76,15 @@ Map images (the radar's backdrop and the pin thumbnail for a shared location) ar
 
 Edits, deletes, and reactions are new packet types (`EDIT`/`DELETE`/`REACTION`) on the same signed mesh transport: public ones are plaintext+broadcast like a public message, DM ones are encrypted the same way the original DM was. Every recipient — not just the sender's own device — independently verifies that an edit/delete's claimed sender matches the message's actual original sender before applying it, so only the real author can change or remove their message.
 
+## Distribution & billing
+
+MeshTalk ships as two completely separate Gradle product flavors, because the Walkie-Talkie feature's billing can't be the same across distribution channels:
+
+- **`play`** — the Google Play Store build. Unlocks Walkie-Talkie via the [Play Billing Library](https://developer.android.com/google/play/billing) (a one-time "lifetime" in-app product, or a monthly subscription with a Play-managed 3-day free trial pricing phase). No external backend needed — Play itself is the source of truth for entitlement.
+- **`github`** — the sideloaded build attached to [Releases](https://github.com/chartmann1590/bluetooth-chat/releases). Play Billing isn't available outside Play Store, so this flavor talks to a small [Cloudflare Worker](cloudflare-worker/) that creates [Stripe](https://stripe.com/) Checkout Sessions (one-time purchase or subscription-with-3-day-trial) and verifies webhooks server-side — no Stripe secret key ever ships in the app. Entitlement is proven by a compact, Ed25519-signed token the Worker mints and the app verifies **locally and offline** (the public key is embedded in the build; only the Worker holds the private key), so the unlock check keeps working even with no connectivity — matching the app's offline-first design. A cached token is honored for 7 days plus a 3-day offline grace period past that before re-locking.
+
+Both flavors share 100% of the chat/mesh/AI code; only `app/src/play/` and `app/src/github/` differ (see [Project structure](#project-structure)). The `github` flavor deliberately has no Firebase/Google-services dependency at all — see [FirebaseHelper.kt](app/src/main/java/com/charles/meshtalk/app/FirebaseHelper.kt)'s guard for how that's kept safe from the shared code that both flavors otherwise use.
+
 ## Requirements
 
 - Android device with Bluetooth LE support (minSdk 26)
@@ -82,28 +92,51 @@ Edits, deletes, and reactions are new packet types (`EDIT`/`DELETE`/`REACTION`) 
 
 ## Building
 
+The app now has two product flavors (`play` and `github` — see [Distribution & billing](#distribution--billing)); most Gradle tasks are flavor-scoped:
+
 ```bash
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleGithubDebug
+adb install -r app/build/outputs/apk/github/debug/app-github-debug.apk
+
+./gradlew assemblePlayDebug
+adb install -r app/build/outputs/apk/play/debug/app-play-debug.apk
 ```
+
+Both flavors can be installed side by side on the same device for testing (the `github` flavor uses an `applicationIdSuffix`).
 
 ## Releases
 
-Every push to `master` runs [`.github/workflows/release.yml`](.github/workflows/release.yml): it runs the unit tests, builds a signed release APK and Android App Bundle, and publishes them as a new GitHub release (tagged `build-<run number>`) under [Releases](https://github.com/chartmann1590/bluetooth-chat/releases). Signing uses a keystore stored as a base64-encoded GitHub Secret (`ANDROID_KEYSTORE_BASE64`) plus the store/key passwords and alias as separate secrets — nothing sensitive is committed to the repo. Building `assembleRelease`/`bundleRelease` locally without those environment variables set just produces an unsigned build, same as before.
+Every push to `master` runs [`.github/workflows/release.yml`](.github/workflows/release.yml): it runs the unit tests, builds a signed release APK/AAB for **both** flavors, publishes the `github`-flavor APK as a new GitHub release (tagged `build-<run number>`) under [Releases](https://github.com/chartmann1590/bluetooth-chat/releases), and uploads the `play`-flavor AAB as a downloadable workflow artifact (Play Console upload is still a manual step — see below). Signing uses a keystore stored as a base64-encoded GitHub Secret (`ANDROID_KEYSTORE_BASE64`) plus the store/key passwords and alias as separate secrets — nothing sensitive is committed to the repo. Building `assemblePlayRelease`/`assembleGithubRelease` locally without those environment variables set just produces an unsigned build, same as before.
+
+### Setting up Google Play Billing (one-time, manual — not automated)
+
+The `play` flavor references two product IDs that must be created by hand in [Play Console](https://play.google.com/console) before real purchases work:
+
+1. **Monetize → Products → In-app products** → create a managed product with ID **`walkietalkie_lifetime`** (the one-time "buy forever" purchase).
+2. **Monetize → Products → Subscriptions** → create a subscription with ID **`walkietalkie_monthly`**, add a base plan (e.g. `monthly-autorenewing`), and give that base plan's offer a **3-day free-trial pricing phase** ahead of the recurring paid phase.
+3. Upload the `play`-flavor AAB (from the workflow artifact above, or `./gradlew bundlePlayRelease` locally) to at least an **internal testing track**, and add yourself as a license tester — Play Billing purchases (even sandboxed ones) don't work against a build Play Console hasn't seen.
+4. From then on, every CI build's AAB artifact can be uploaded to that track (or a higher one) the same way; this step isn't automated yet.
+
+No other configuration is needed on the app side — `PlayBillingRepository` (`app/src/play/java/.../billing/`) already references those exact product IDs, and Play itself is the entitlement source of truth.
 
 ## Project structure
 
 ```
-app/src/main/java/com/charles/meshtalk/app/
+app/src/main/java/com/charles/meshtalk/app/       Shared code (both flavors)
 ├── ai/             On-device Gemma 4 model manager (download, load, inference via LiteRT-LM)
 ├── ble/            BLE mesh transport: service, packet codec, mesh relay engine
+├── billing/        Shared BillingRepository interface + EntitlementGate (per-flavor impls below)
 ├── crypto/         Identity keypair, signing, ECDH + AES-GCM
 ├── data/           Room database (contacts, messages)
-├── media/          Image compression, file/location prep, offline map cache
-├── notifications/  DM notification channel
+├── media/          Audio record/playback (walkie-talkie), image compression, file/location prep, offline map cache
+├── notifications/  DM + voice-message notification channels
 ├── repository/     Bridges the BLE service + Room to the UI
 ├── sensors/        Compass heading provider (for the Find radar tab)
 └── ui/             Jetpack Compose screens
+
+app/src/play/java/com/charles/meshtalk/app/billing/    Play Billing Library implementation
+app/src/github/java/com/charles/meshtalk/app/billing/  Stripe/Cloudflare Worker implementation
+cloudflare-worker/                                      Stripe backend for the github flavor (Checkout Sessions, webhooks, entitlement tokens)
 ```
 
 ## Known limitations
@@ -116,3 +149,5 @@ app/src/main/java/com/charles/meshtalk/app/
 - Bluetooth signal strength is a rough distance proxy, not exact — even with the path-loss-based distance estimate, walls, orientation, and interference all shift the reading by several dB. Anyone scanning nearby can see a device's raw signal strength; the "Tracking beacon" setting only controls how often that device advertises, not whether its signal is visible.
 - The radar tab's map backdrop needs internet the first time an area is viewed (then it's cached offline); peer arrows are relative signal estimates, not real bearings — there's no Bluetooth AoA/direction-finding hardware involved.
 - Editing is only supported for plain-text messages; photos, files, and locations can be deleted but not edited.
+- Walkie-Talkie is a "record, then send" model, not a live duplex call — a clip only appears for the recipient once it's fully reassembled, since the underlying mesh transport has no partial/streaming delivery. Multi-hop voice relay is implemented (TTL-gated, opt-in) but only verified with a direct two-device link in testing — relaying through a third intermediate device hasn't been exercised yet.
+- Entitlement tokens (github/Stripe flavor) are verified locally and cached for offline use; a sufficiently motivated user could replay an old token or roll back their device clock. This is an accepted, documented tradeoff for a low-value in-app purchase, not a DRM-grade defense. Trial abuse (uninstall + reinstall to reset the anonymous device ID) is similarly a known, low-stakes gap rather than something requiring a full account system.

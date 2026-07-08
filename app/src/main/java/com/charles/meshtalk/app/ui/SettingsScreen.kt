@@ -14,6 +14,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.charles.meshtalk.app.data.feedback.BugReportRepo
 import com.charles.meshtalk.app.repository.MeshRepository
@@ -39,6 +41,8 @@ fun SettingsScreen(repository: MeshRepository) {
     val trackingBeacon by repository.trackingBeaconEnabled.collectAsState()
     val findFeatureEnabled by repository.findFeatureEnabled.collectAsState()
     val voiceRelayEnabled by repository.voiceRelayEnabled.collectAsState()
+    val publicVoiceNotificationsEnabled by repository.publicVoiceNotificationsEnabled.collectAsState()
+    val analyticsCrashlyticsEnabled by repository.analyticsCrashlyticsEnabled.collectAsState()
     val context = LocalContext.current
     val bugReportRepo = remember { BugReportRepo(context) }
     var feedbackKey by remember { mutableStateOf(0) }
@@ -147,6 +151,69 @@ fun SettingsScreen(repository: MeshRepository) {
                 Switch(
                     checked = voiceRelayEnabled,
                     onCheckedChange = { repository.setVoiceRelayEnabled(it) }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Notify me of public voice messages", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Direct voice messages always notify you. The public feed can have many " +
+                            "senders, so notifying on every public voice clip is off by default — " +
+                            "turn this on if you want to hear about those too.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = publicVoiceNotificationsEnabled,
+                    onCheckedChange = { repository.setPublicVoiceNotificationsEnabled(it) }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Usage & crash reporting", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Sends anonymised app-usage data, crash reports and performance metrics " +
+                            "to Google Firebase to help us understand how MeshTalk is being used " +
+                            "and identify bugs. No messages, identities, contacts or Bluetooth " +
+                            "activity are ever collected. You can turn this off at any time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = analyticsCrashlyticsEnabled,
+                    onCheckedChange = { repository.setAnalyticsCrashlyticsEnabled(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            TextButton(
+                onClick = {
+                    val intent = android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://chartmann1590.github.io/bluetooth-chat/privacy.html")
+                    )
+                    context.startActivity(intent)
+                }
+            ) {
+                Text(
+                    "Privacy Policy",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 

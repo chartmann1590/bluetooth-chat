@@ -46,10 +46,10 @@
 <body>
 <div class="wrap">
   <h1>Privacy Policy</h1>
-  <p class="updated">MeshTalk for Android · Last updated 2026-07-05</p>
+  <p class="updated">MeshTalk for Android · Last updated 2026-07-07</p>
 
   <div class="card">
-    <strong>Short version:</strong> MeshTalk has no servers, no accounts, and no analytics. Everything it stores lives only on your device. The only place your data travels is directly, over Bluetooth, to other nearby phones running MeshTalk — because that's how the app works.
+    <strong>Short version:</strong> MeshTalk has no servers, no accounts, and everything it stores lives only on your device. The only place your messages travel is directly, over Bluetooth, to other nearby phones running MeshTalk. The app uses Firebase (operated by Google) for anonymised crash reporting, usage analytics, and performance monitoring — you can disable all of this in Settings &gt; "Usage &amp; crash reporting" at any time.
   </div>
 
   <h2>What MeshTalk stores on your device</h2>
@@ -80,8 +80,29 @@
     <li><strong>Battery optimization exemption (optional)</strong> — improves reliability of background message delivery; you can decline this and use the app normally.</li>
   </ul>
 
-  <h2>Third parties</h2>
-  <p>MeshTalk does not integrate any analytics, advertising, or crash-reporting SDKs, and does not communicate with any server operated by the developer or anyone else.</p>
+  <h2>Third-party services</h2>
+  <p>MeshTalk uses <strong>Google Firebase</strong> to help the developer understand how the app is being used and to identify issues. Three Firebase services are integrated:</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Firebase Analytics</h3>
+    <p>Collects anonymised, aggregated data about how people use the app — for example, which screens are viewed, which features are most used, and the number of active users. No personally identifiable information (no names, no message content, no contact data, no Bluetooth identifiers) is collected. This data is processed by Google's servers and is subject to <a href="https://policies.google.com/privacy">Google's Privacy Policy</a>.</p>
+  </div>
+
+  <div class="card">
+    <h3>Firebase Crashlytics</h3>
+    <p>Collects crash reports when the app encounters a fatal error. Each report includes the stack trace (which line of code failed), the device model, Android version, and app version. No message content, cryptographic keys, contacts, or any user-generated data is included. Crash reports are processed by Google and help the developer fix bugs.</p>
+  </div>
+
+  <div class="card">
+    <h3>Firebase Performance Monitoring</h3>
+    <p>Collects anonymised performance data — app startup time, how long it takes to render screens, and similar technical metrics. This helps the developer keep the app fast. No user data or message content is collected.</p>
+  </div>
+
+  <h2>Opting out of Firebase data collection</h2>
+  <p>All three Firebase services can be turned off at any time from within the app: open <strong>Settings</strong> and toggle off <strong>"Usage &amp; crash reporting"</strong>. When disabled, no analytics events, crash reports, or performance metrics are sent to Google. This setting is immediate — no data is queued or sent after you turn it off. It is enabled by default so the developer can learn about issues early, but you have full control.</p>
+
+  <h2>Other third parties</h2>
+  <p>Aside from Firebase (as described above), MeshTalk does not integrate any advertising, analytics, or other third-party SDKs, and does not communicate with any server operated by the developer or anyone else.</p>
 
   <h2>Children's privacy</h2>
   <p>MeshTalk does not knowingly collect any information from anyone, of any age, since it doesn't collect information at all in the traditional sense — everything described above stays on-device or goes directly to other nearby users' devices.</p>
