@@ -121,10 +121,17 @@ async function handleCreateCheckoutSession(request, env) {
       cancel_url: cancelUrl
     });
   } else {
+    // Only grant the 3-day trial the first time this deviceId subscribes — otherwise a user could
+    // cancel and immediately resubscribe on the same device to keep re-triggering a "new" trial
+    // indefinitely, since nothing about a fresh Checkout Session/Customer would otherwise stop it.
+    const record = await getRecord(env, deviceId);
+    const subscriptionData = record.trialUsed
+      ? { metadata: { deviceId } }
+      : { trial_period_days: 3, metadata: { deviceId } };
     session = await stripeApi(env, "checkout/sessions", {
       mode: "subscription",
       line_items: [{ price: env.STRIPE_PRICE_MONTHLY, quantity: 1 }],
-      subscription_data: { trial_period_days: 3, metadata: { deviceId } },
+      subscription_data: subscriptionData,
       metadata: { deviceId },
       success_url: successUrl,
       cancel_url: cancelUrl
