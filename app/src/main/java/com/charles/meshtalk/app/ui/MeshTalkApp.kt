@@ -68,6 +68,11 @@ fun MeshTalkApp(
 
     LaunchedEffect(Unit) {
         AdsManager.init(context)
+        // Otherwise entitlementState only ever gets a live re-check inside EntitlementGate (i.e.
+        // when the user opens the Talk tab) — meaning ads elsewhere would keep trusting a stale
+        // cached token (github/Stripe flavor's offline-grace cache) long after a subscription
+        // actually lapsed, instead of reflecting the real, current entitlement.
+        billingRepository.refreshEntitlement()
     }
     LaunchedEffect(adsEnabled) {
         if (adsEnabled) AdsManager.loadInterstitialIfNeeded(context, billingRepository)

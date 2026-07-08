@@ -76,11 +76,19 @@ jobs:
           name: app-play-release-aab
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
 
+      - name: List github-flavor release APK output (debugging aid if the release asset glob below
+          ever stops matching again)
+        run: ls -la app/build/outputs/apk/github/release/
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }} (${{ github.sha }})
           generate_release_notes: true
+          # A glob, not a fixed filename — AGP's exact output filename for a signed release APK
+          # isn't guaranteed to stay "app-github-release-sideload.apk" (it wasn't, in practice: every
+          # prior release back to build-11 silently shipped with zero attached assets because that
+          # exact name never matched anything).
           files: |
-            app/build/outputs/apk/github/release/app-github-release-sideload.apk
+            app/build/outputs/apk/github/release/app-github-release*.apk
