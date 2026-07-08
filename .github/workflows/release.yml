@@ -55,6 +55,11 @@ jobs:
           # `wrangler secret put` / the Cloudflare API, not here).
           CLOUDFLARE_WORKER_URL: ${{ secrets.CLOUDFLARE_WORKER_BASE_URL }}
           ENTITLEMENT_VERIFY_PUBLIC_KEY_HEX: ${{ secrets.ENTITLEMENT_VERIFY_PUBLIC_KEY_HEX }}
+          # AdMob app id + ad unit ids (all public identifiers, not secrets in the security sense,
+          # but kept out of source so release builds are the only ones ever serving real ads).
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          ADMOB_BANNER_AD_UNIT_ID: ${{ secrets.ADMOB_BANNER_AD_UNIT_ID }}
+          ADMOB_INTERSTITIAL_AD_UNIT_ID: ${{ secrets.ADMOB_INTERSTITIAL_AD_UNIT_ID }}
         run: ./gradlew assemblePlayRelease bundlePlayRelease assembleGithubRelease bundleGithubRelease --console=plain
 
       - name: Remove decoded keystore

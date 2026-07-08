@@ -56,6 +56,17 @@ android {
         buildConfigField("String", "GITHUB_REPO_NAME",
             "\"${feedbackProp("github.repo.name") ?: ""}\"")
         buildConfigField("String", "FEEDBACK_ASSETS_DIR", "\"feedback-assets\"")
+
+        // AdMob config. Falls back to Google's official test IDs (never real ad traffic/revenue)
+        // so a local build without the real secrets set still runs instead of crashing on a blank
+        // <meta-data> value or failing to load ads with an invalid unit id.
+        val admobAppId = feedbackProp("admob.app.id") ?: "ca-app-pub-3940256099942544~3347511713"
+        buildConfigField("String", "ADMOB_APP_ID", "\"$admobAppId\"")
+        buildConfigField("String", "ADMOB_BANNER_AD_UNIT_ID",
+            "\"${feedbackProp("admob.banner.ad.unit.id") ?: "ca-app-pub-3940256099942544/9214589741"}\"")
+        buildConfigField("String", "ADMOB_INTERSTITIAL_AD_UNIT_ID",
+            "\"${feedbackProp("admob.interstitial.ad.unit.id") ?: "ca-app-pub-3940256099942544/1033173712"}\"")
+        manifestPlaceholders["admobAppId"] = admobAppId
     }
 
     signingConfigs {
@@ -169,6 +180,10 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.firebase:firebase-perf-ktx")
+
+    // AdMob (banner + interstitial); shown only while the walkie-talkie entitlement is locked —
+    // see AdsManager.kt.
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

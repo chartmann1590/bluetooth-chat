@@ -1,5 +1,6 @@
 package com.charles.meshtalk.app.ui
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
@@ -30,8 +31,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.charles.meshtalk.app.ads.AdsManager
+import com.charles.meshtalk.app.ads.BannerAdView
 import com.charles.meshtalk.app.billing.BillingRepositoryProvider
 import com.charles.meshtalk.app.billing.EntitlementGate
+import com.charles.meshtalk.app.billing.findActivity
+import com.charles.meshtalk.app.billing.isUnlocked
 import com.charles.meshtalk.app.notifications.VoiceNotifier
 import com.charles.meshtalk.app.repository.MeshRepository
 
@@ -58,6 +63,15 @@ fun MeshTalkApp(
     val findFeatureEnabled by repository.findFeatureEnabled.collectAsState()
     val context = LocalContext.current
     val billingRepository = remember { BillingRepositoryProvider.create(context) }
+    val entitlementState by billingRepository.entitlementState.collectAsState()
+    val adsEnabled = !entitlementState.isUnlocked()
+
+    LaunchedEffect(Unit) {
+        AdsManager.init(context)
+    }
+    LaunchedEffect(adsEnabled) {
+        if (adsEnabled) AdsManager.loadInterstitialIfNeeded(context, billingRepository)
+    }
 
     LaunchedEffect(pendingDmPeerKey) {
         if (pendingDmPeerKey != null) {
@@ -87,28 +101,38 @@ fun MeshTalkApp(
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = backStackEntry?.destination
 
-            NavigationBar {
-                buildList {
-                    add(Triple(ROUTE_PUBLIC, "Public", Icons.Filled.Public))
-                    add(Triple(ROUTE_MESSAGES, "Messages", Icons.Filled.Forum))
-                    add(Triple(ROUTE_NEARBY, "Nearby", Icons.Filled.People))
-                    add(Triple(ROUTE_WALKIE_TALKIE, "Talk", Icons.Filled.Mic))
-                    if (findFeatureEnabled) add(Triple(ROUTE_FIND_ALL, "Find", Icons.Filled.Explore))
-                    add(Triple(ROUTE_AI_CHAT, "AI", Icons.Filled.Psychology))
-                    add(Triple(ROUTE_SETTINGS, "Settings", Icons.Filled.Settings))
-                }.forEach { (route, label, icon) ->
-                    NavigationBarItem(
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == route } == true,
-                        onClick = {
-                            navController.navigate(route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
+            Column {
+                // Only ever shown while the walkie-talkie entitlement is locked — purchasing or
+                // subscribing (the app's one paid product) is treated as "ad-free/pro" too, so this
+                // disappears the moment entitlementState reflects an unlocked state.
+                if (adsEnabled) BannerAdView()
+
+                NavigationBar {
+                    buildList {
+                        add(Triple(ROUTE_PUBLIC, "Public", Icons.Filled.Public))
+                        add(Triple(ROUTE_MESSAGES, "Messages", Icons.Filled.Forum))
+                        add(Triple(ROUTE_NEARBY, "Nearby", Icons.Filled.People))
+                        add(Triple(ROUTE_WALKIE_TALKIE, "Talk", Icons.Filled.Mic))
+                        if (findFeatureEnabled) add(Triple(ROUTE_FIND_ALL, "Find", Icons.Filled.Explore))
+                        add(Triple(ROUTE_AI_CHAT, "AI", Icons.Filled.Psychology))
+                        add(Triple(ROUTE_SETTINGS, "Settings", Icons.Filled.Settings))
+                    }.forEach { (route, label, icon) ->
+                        NavigationBarItem(
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == route } == true,
+                            onClick = {
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                                if (adsEnabled) {
+                                    context.findActivity()?.let { AdsManager.maybeShowInterstitial(it, billingRepository) }
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
