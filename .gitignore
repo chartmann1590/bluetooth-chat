@@ -16,3 +16,4 @@ app/build/
 *.keystore
 .claude/
 app/google-services.json
+.secrets-local/
