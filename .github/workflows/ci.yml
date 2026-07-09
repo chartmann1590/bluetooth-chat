@@ -23,12 +23,43 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      # Debug builds don't need release signing secrets, but the play flavor's Firebase/Crashlytics
-      # setup still needs a google-services.json present to apply the google-services plugin (see
-      # build.gradle.kts: the plugin only applies `if (file("google-services.json").exists())`).
-      - name: Decode google-services.json
+      # The play flavor's Firebase/Crashlytics setup needs a google-services.json present to apply
+      # the google-services plugin (see build.gradle.kts: the plugin only applies
+      # `if (file("google-services.json").exists())`). CI only needs to compile, not talk to real
+      # Firebase, so a structurally-valid dummy is used instead of the real secret — this also
+      # means PRs from Dependabot (whose runs GitHub deliberately denies repo secrets to) and any
+      # future external-contributor PRs build correctly without needing secrets at all.
+      - name: Write dummy google-services.json
         run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
+          cat > app/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "0",
+              "project_id": "ci-dummy-project",
+              "storage_bucket": "ci-dummy-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:0:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.charles.meshtalk.app"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  { "current_key": "ci-dummy-key" }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
 
       - name: Run unit tests
         run: ./gradlew test --console=plain
