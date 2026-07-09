@@ -64,8 +64,17 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --console=plain
 
-      - name: Build debug APKs (both flavors, unsigned)
-        run: ./gradlew assemblePlayDebug assembleGithubDebug --console=plain
+      # Built as two separate invocations, not one `assemblePlayDebug assembleGithubDebug` command:
+      # combined, the play flavor's Crashlytics/Firebase Perf ASM bytecode transform intermittently
+      # fails to resolve classes (e.g. "com.google.common.util.concurrent.ListenableFuture") during
+      # packagePlayDebug — a known flakiness pattern when Gradle's parallel task execution shares
+      # transform caches across multiple variants in one task graph. Separate invocations force each
+      # variant's task graph to fully resolve before the next starts, which avoids the race.
+      - name: Build play-flavor debug APK (unsigned)
+        run: ./gradlew assemblePlayDebug --console=plain
+
+      - name: Build github-flavor debug APK (unsigned)
+        run: ./gradlew assembleGithubDebug --console=plain
 
       - name: Remove decoded google-services.json
         if: always()
