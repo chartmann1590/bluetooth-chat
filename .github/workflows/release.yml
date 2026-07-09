@@ -68,17 +68,19 @@ jobs:
           rm -f "${{ runner.temp }}/release.jks"
           rm -f app/google-services.json
 
-      # The play-flavor AAB is for Play Console upload, not a GitHub Release asset — Play Console
-      # upload stays a manual step for now, so it's kept as a downloadable workflow artifact instead.
+      # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
+      # are easier to fetch from within an in-progress workflow run than release assets are.
       - name: Upload play-flavor App Bundle as a build artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-play-release-aab
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
 
-      - name: List github-flavor release APK output (debugging aid if the release asset glob below
-          ever stops matching again)
-        run: ls -la app/build/outputs/apk/github/release/
+      - name: List github-flavor release APK and play-flavor bundle output (debugging aid if the
+          release asset globs below ever stop matching again)
+        run: |
+          ls -la app/build/outputs/apk/github/release/
+          ls -la app/build/outputs/bundle/playRelease/
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -86,9 +88,11 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }} (${{ github.sha }})
           generate_release_notes: true
-          # A glob, not a fixed filename — AGP's exact output filename for a signed release APK
-          # isn't guaranteed to stay "app-github-release-sideload.apk" (it wasn't, in practice: every
-          # prior release back to build-11 silently shipped with zero attached assets because that
-          # exact name never matched anything).
+          # Globs, not fixed filenames — AGP's exact output filename for a signed release build
+          # isn't guaranteed to stay put (it wasn't, in practice: every prior release back to
+          # build-11 silently shipped with zero attached assets because an exact name stopped
+          # matching). The .aab is attached here (not just as a workflow artifact) so a Play
+          # Console upload never depends on digging through Actions run history.
           files: |
             app/build/outputs/apk/github/release/app-github-release*.apk
+            app/build/outputs/bundle/playRelease/app-play-release*.aab
