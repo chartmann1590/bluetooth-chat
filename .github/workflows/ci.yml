@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Debug builds don't need release signing secrets, but the play flavor's Firebase/Crashlytics
+      # setup still needs a google-services.json present to apply the google-services plugin (see
+      # build.gradle.kts: the plugin only applies `if (file("google-services.json").exists())`).
+      - name: Decode google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
+
+      - name: Run unit tests
+        run: ./gradlew test --console=plain
+
+      - name: Build debug APKs (both flavors, unsigned)
+        run: ./gradlew assemblePlayDebug assembleGithubDebug --console=plain
+
+      - name: Remove decoded google-services.json
+        if: always()
+        run: rm -f app/google-services.json
