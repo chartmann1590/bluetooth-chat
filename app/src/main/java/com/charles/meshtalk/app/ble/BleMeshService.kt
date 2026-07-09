@@ -146,7 +146,7 @@ class BleMeshService : Service() {
 
     private fun buildNotification(text: String): Notification {
         val openIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, MainActivity::class.java).apply { setPackage(packageName) },
             PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
