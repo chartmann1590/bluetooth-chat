@@ -173,7 +173,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
 
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.9.0"))
