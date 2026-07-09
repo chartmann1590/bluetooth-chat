@@ -137,10 +137,22 @@ class BleMeshService : Service() {
         val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, "Mesh networking", NotificationManager.IMPORTANCE_LOW)
         manager.createNotificationChannel(channel)
         val notification = buildNotification("Starting mesh…")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            // START_STICKY can get this service recreated by the OS itself (not by the app) after
+            // being killed, e.g. for memory pressure, while the app has no foreground-service-start
+            // exemption active. On API 31+ that makes startForeground() throw
+            // ForegroundServiceStartNotAllowedException instead of succeeding — per Android's own
+            // guidance, the correct handling is to catch it and stop rather than crash the process.
+            // Caught as plain Exception (not the API-31-only type) so this compiles/behaves
+            // identically on the minSdk 26 devices this app also supports.
+            Log.w(TAG, "startForeground() rejected by the OS, stopping: ${e.message}")
+            stopSelf()
         }
     }
 

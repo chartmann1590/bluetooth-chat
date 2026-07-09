@@ -121,9 +121,14 @@ jobs:
             }
             try { await github.rest.issues.getLabel({ owner, repo, name: 'crashlytics' }); }
             catch { await github.rest.issues.createLabel({ owner, repo, name: 'crashlytics', color: 'ee0701', description: 'Firebase Crashlytics crash report' }); }
-            const { data: openGHIssues } = await github.rest.issues.listForRepo({ owner, repo, labels: 'crashlytics', state: 'open', per_page: 100 });
+            // state: 'all' (not just 'open') — a human closing one of these issues after shipping a
+            // fix is a deliberate triage decision. Firebase's own crash "state" only flips to
+            // resolved if someone marks it resolved in the Firebase Console, which nobody does here;
+            // querying only open GitHub issues meant every closed-as-fixed issue got silently
+            // recreated from scratch (same stale event count and all) on the very next hourly run.
+            const { data: allGHIssues } = await github.rest.issues.listForRepo({ owner, repo, labels: 'crashlytics', state: 'all', per_page: 100 });
             const ghMap = {};
-            for (const gh of openGHIssues) for (const lbl of gh.labels) if (lbl.name?.startsWith('crashlytics:')) ghMap[lbl.name.slice('crashlytics:'.length)] = gh;
+            for (const gh of allGHIssues) for (const lbl of gh.labels) if (lbl.name?.startsWith('crashlytics:')) ghMap[lbl.name.slice('crashlytics:'.length)] = gh;
             const openIds = new Set();
             for (const ci of crashlyticsIssues) {
               if (ci.state !== 'OPEN') continue;
@@ -139,7 +144,20 @@ jobs:
                 const prevMatch = (existing.body || '').match(/<!-- crashlytics-events:(\d+) -->/);
                 const prev = prevMatch ? parseInt(prevMatch[1], 10) : 0;
                 const today = new Date().toISOString().split('T')[0];
-                if (ci.eventCount > prev) {
+                if (existing.state === 'closed') {
+                  // Only reopen on genuinely new events beyond what was already triaged when closed —
+                  // a closed issue with an unchanged event count is a fixed bug, not a recurrence.
+                  if (ci.eventCount > prev) {
+                    await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: `🔁 **Recurred after being closed:** ${prev.toLocaleString()} → ${ci.eventCount.toLocaleString()} events (+${(ci.eventCount - prev).toLocaleString()})\n- **Impacted users:** ${ci.impactedUsers.toLocaleString()}\n- **Last seen:** ${ci.lastSeenVersion}\n\nReopening — this crash occurred again after a previous fix/triage.\n\n*Checked: ${new Date().toISOString()}*` });
+                    let updatedBody = (existing.body || '')
+                      .replace(/<!-- crashlytics-events:\d+ -->/, `<!-- crashlytics-events:${ci.eventCount} -->`)
+                      .replace(/<!-- crashlytics-last-seen:\d{4}-\d{2}-\d{2} -->/, `<!-- crashlytics-last-seen:${today} -->`);
+                    await github.rest.issues.update({ owner, repo, issue_number: existing.number, body: updatedBody, state: 'open' });
+                    console.log(`Reopened #${existing.number}: ${prev} → ${ci.eventCount} events`);
+                  } else {
+                    console.log(`Issue #${existing.number} stays closed (${ci.eventCount} events, no new occurrences since triage)`);
+                  }
+                } else if (ci.eventCount > prev) {
                   await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: `📈 **Event count updated:** ${prev.toLocaleString()} → ${ci.eventCount.toLocaleString()} (+${(ci.eventCount - prev).toLocaleString()})\n- **Impacted users:** ${ci.impactedUsers.toLocaleString()}\n- **Last seen:** ${ci.lastSeenVersion}\n\n*Checked: ${new Date().toISOString()}*` });
                   let updatedBody = (existing.body || '')
                     .replace(/<!-- crashlytics-events:\d+ -->/, `<!-- crashlytics-events:${ci.eventCount} -->`)
@@ -150,7 +168,7 @@ jobs:
               }
             }
             for (const [cid, gh] of Object.entries(ghMap)) {
-              if (!openIds.has(cid)) {
+              if (gh.state === 'open' && !openIds.has(cid)) {
                 await github.rest.issues.createComment({ owner, repo, issue_number: gh.number, body: `✅ Crashlytics issue \`${cid}\` is no longer in the open list — auto-closing.\n\n*Checked: ${new Date().toISOString()}*` });
                 await github.rest.issues.update({ owner, repo, issue_number: gh.number, state: 'closed' });
                 console.log(`Auto-closed #${gh.number}`);
