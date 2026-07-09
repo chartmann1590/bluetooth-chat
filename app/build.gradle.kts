@@ -157,14 +157,14 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.2")
     implementation("androidx.core:core-ktx:1.13.1")
 
-    implementation("androidx.room:room-runtime:2.7.0")
-    implementation("androidx.room:room-ktx:2.7.0")
-    ksp("androidx.room:room-compiler:2.7.0")
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
 
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     // GitHub feedback reporter dependencies
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -173,7 +173,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
 
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.9.0"))

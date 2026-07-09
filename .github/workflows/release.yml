@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -71,7 +71,7 @@ jobs:
       # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
       # are easier to fetch from within an in-progress workflow run than release assets are.
       - name: Upload play-flavor App Bundle as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-play-release-aab
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
@@ -83,7 +83,7 @@ jobs:
           ls -la app/build/outputs/bundle/playRelease/
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }} (${{ github.sha }})
