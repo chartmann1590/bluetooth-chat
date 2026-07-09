@@ -71,7 +71,7 @@ jobs:
       # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
       # are easier to fetch from within an in-progress workflow run than release assets are.
       - name: Upload play-flavor App Bundle as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-play-release-aab
           path: app/build/outputs/bundle/playRelease/app-play-release.aab
