@@ -68,19 +68,35 @@ jobs:
           rm -f "${{ runner.temp }}/release.jks"
           rm -f app/google-services.json
 
-      # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
-      # are easier to fetch from within an in-progress workflow run than release assets are.
-      - name: Upload play-flavor App Bundle as a build artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-play-release-aab
-          path: app/build/outputs/bundle/playRelease/app-play-release.aab
-
       - name: List github-flavor release APK and play-flavor bundle output (debugging aid if the
           release asset globs below ever stop matching again)
         run: |
           ls -la app/build/outputs/apk/github/release/
           ls -la app/build/outputs/bundle/playRelease/
+
+      # AGP's own output filenames (app-play-release.aab, app-github-release*.apk) carry no
+      # version info, so a downloaded file gives no clue which build it came from without
+      # cross-referencing the release page. Copy (not rename in place) so the glob-based "list"
+      # step above still finds the originals if AGP's naming ever shifts again.
+      - name: Rename release artifacts with app name and version code
+        id: rename
+        run: |
+          AAB_SRC=$(ls app/build/outputs/bundle/playRelease/app-play-release*.aab | head -1)
+          APK_SRC=$(ls app/build/outputs/apk/github/release/app-github-release*.apk | head -1)
+          AAB_OUT="app/build/outputs/bundle/playRelease/MeshTalk-play-v${{ github.run_number }}.aab"
+          APK_OUT="app/build/outputs/apk/github/release/MeshTalk-github-v${{ github.run_number }}.apk"
+          cp "$AAB_SRC" "$AAB_OUT"
+          cp "$APK_SRC" "$APK_OUT"
+          echo "aab_path=$AAB_OUT" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$APK_OUT" >> "$GITHUB_OUTPUT"
+
+      # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
+      # are easier to fetch from within an in-progress workflow run than release assets are.
+      - name: Upload play-flavor App Bundle as a build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MeshTalk-play-v${{ github.run_number }}-aab
+          path: ${{ steps.rename.outputs.aab_path }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
@@ -88,11 +104,6 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }} (${{ github.sha }})
           generate_release_notes: true
-          # Globs, not fixed filenames — AGP's exact output filename for a signed release build
-          # isn't guaranteed to stay put (it wasn't, in practice: every prior release back to
-          # build-11 silently shipped with zero attached assets because an exact name stopped
-          # matching). The .aab is attached here (not just as a workflow artifact) so a Play
-          # Console upload never depends on digging through Actions run history.
           files: |
-            app/build/outputs/apk/github/release/app-github-release*.apk
-            app/build/outputs/bundle/playRelease/app-play-release*.aab
+            ${{ steps.rename.outputs.apk_path }}
+            ${{ steps.rename.outputs.aab_path }}
