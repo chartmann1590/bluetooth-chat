@@ -468,15 +468,26 @@ class BleMeshService : Service() {
                 return
             }
             gatt.setCharacteristicNotification(char, true)
+            refreshPeerCount()
             val cccd = char.getDescriptor(CCCD_UUID)
             if (cccd != null) {
+                // The initial packet batch must wait for onDescriptorWrite: Android's GATT client only
+                // allows one outstanding operation per connection, so writeCharacteristic() called here
+                // would race the still-in-flight descriptor write and fail (silently dropping the chunk
+                // and, since onCharacteristicWrite never fires to unblock it, wedging the send queue for
+                // the rest of the connection).
                 cccd.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
                 gatt.writeDescriptor(cccd)
+            } else {
+                sendInitialPackets(gatt, char)
             }
-            refreshPeerCount()
-            val toSend = meshEngine?.packetsForNewPeer() ?: emptyList()
-            Log.d(TAG, "onServicesDiscovered: ${gatt.device.address}, sending ${toSend.size} packets")
-            toSend.forEach { enqueueToPeripheral(gatt, char, it) }
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            if (descriptor.uuid != CCCD_UUID) return
+            val char = gatt.getService(SERVICE_UUID)?.getCharacteristic(CHAR_UUID) ?: return
+            sendInitialPackets(gatt, char)
         }
 
         // Android < 13 (API < 33, e.g. the Kindle) only ever calls this deprecated 2-arg
@@ -497,6 +508,14 @@ class BleMeshService : Service() {
             val link = peripheralLinks[gatt.device.address] ?: return
             sendNextQueuedChunkToPeripheral(gatt, characteristic, link)
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendInitialPackets(gatt: BluetoothGatt, char: BluetoothGattCharacteristic) {
+        refreshPeerCount()
+        val toSend = meshEngine?.packetsForNewPeer() ?: emptyList()
+        Log.d(TAG, "sendInitialPackets: ${gatt.device.address}, sending ${toSend.size} packets")
+        toSend.forEach { enqueueToPeripheral(gatt, char, it) }
     }
 
     @SuppressLint("MissingPermission")
