@@ -45,7 +45,7 @@ android {
     defaultConfig {
         applicationId = "com.charles.meshtalk.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = ciVersionCode ?: 1
         versionName = ciVersionName ?: "0.1"
 
