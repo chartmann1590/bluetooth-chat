@@ -4,7 +4,10 @@
      the play flavor never needs this since Play Billing completes in-process. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <activity android:name=".MainActivity">
+        <!-- exported=true is required: this intent-filter must be reachable from the browser that
+             completes the Stripe Checkout redirect. Repeated here (not just inherited from the main
+             manifest's MainActivity declaration via merge) so it's unambiguous in isolation too. -->
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
