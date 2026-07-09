@@ -50,6 +50,7 @@ object VoiceNotifier {
         ensureChannel(context)
         val openIntent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
+            setPackage(context.packageName)
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_OPEN_WALKIE_TALKIE_TARGET, target)
         }
