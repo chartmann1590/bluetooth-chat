@@ -1,0 +1,111 @@
+name: Publish to Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_play_publish:
+        description: 'Type "publish" to confirm submission to Google Play Production'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes for this version (leave blank to auto-generate)'
+        required: false
+        type: string
+
+jobs:
+  publish:
+    name: Build and Publish to Play
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Confirm publish intent
+        if: ${{ github.event.inputs.confirm_play_publish != 'publish' }}
+        run: |
+          echo "::error::You must type 'publish' in the confirm_play_publish input to proceed."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Compute version
+        run: |
+          echo "ANDROID_VERSION_CODE=$(date -u +'%y%j%H%M')" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_NAME=0.1.$(date -u +'%Y%m%d.%H%M')" >> "$GITHUB_ENV"
+
+      - name: Decode google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
+
+      - name: Decode release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.jks"
+
+      - name: Run unit tests
+        run: ./gradlew testPlayReleaseUnitTest
+
+      - name: Run lint
+        run: ./gradlew lintPlayRelease
+
+      - name: Build Play release AAB
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          ADMOB_BANNER_AD_UNIT_ID: ${{ secrets.ADMOB_BANNER_AD_UNIT_ID }}
+          ADMOB_INTERSTITIAL_AD_UNIT_ID: ${{ secrets.ADMOB_INTERSTITIAL_AD_UNIT_ID }}
+        run: ./gradlew bundlePlayRelease
+
+      - name: Remove decoded secrets
+        if: always()
+        run: |
+          rm -f "${{ runner.temp }}/release.jks"
+          rm -f app/google-services.json
+
+      - name: Generate release notes
+        run: |
+          mkdir -p distribution/whatsnew
+          WHATSNEW="distribution/whatsnew/whatsnew-en-US"
+          NOTES="${{ github.event.inputs.release_notes }}"
+          if [ -n "$NOTES" ]; then
+            echo "$NOTES" > "$WHATSNEW"
+          elif PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null) && [ -n "$PREV_TAG" ]; then
+            git log --pretty=format:'- %s' "${PREV_TAG}..HEAD" > "$WHATSNEW"
+            if [ ! -s "$WHATSNEW" ]; then
+              echo "Bug fixes and performance improvements." > "$WHATSNEW"
+            fi
+          else
+            echo "Bug fixes and performance improvements." > "$WHATSNEW"
+          fi
+          echo "Release notes:"
+          cat "$WHATSNEW"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-release-aab
+          path: app/build/outputs/bundle/playRelease/*.aab
+          retention-days: 90
+
+      - name: Publish to Google Play
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.charles.meshtalk.app
+          releaseFiles: app/build/outputs/bundle/playRelease/*.aab
+          track: production
+          status: completed
+          whatsNewDirectory: distribution/whatsnew

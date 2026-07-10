@@ -34,9 +34,13 @@ fun feedbackProp(name: String): String? {
 
 // CI sets APP_VERSION_CODE to the GitHub Actions run number, which only ever increases, so every
 // release build gets a strictly higher versionCode automatically with no manual bump needed.
-// Local builds without it set fall back to a fixed dev versionCode.
-val ciVersionCode: Int? = System.getenv("APP_VERSION_CODE")?.toIntOrNull()
-val ciVersionName: String? = System.getenv("APP_VERSION_NAME")
+// The Play publishing workflow sets ANDROID_VERSION_CODE / ANDROID_VERSION_NAME which take
+// highest precedence, followed by the existing APP_VERSION_CODE / APP_VERSION_NAME, then local
+// baseline values.
+val ciVersionCode: Int? = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull()
+    ?: System.getenv("APP_VERSION_CODE")?.toIntOrNull()
+val ciVersionName: String? = System.getenv("ANDROID_VERSION_NAME")
+    ?: System.getenv("APP_VERSION_NAME")
 
 android {
     namespace = "com.charles.meshtalk.app"
