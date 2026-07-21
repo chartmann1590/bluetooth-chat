@@ -44,12 +44,12 @@ val ciVersionName: String? = System.getenv("ANDROID_VERSION_NAME")
 
 android {
     namespace = "com.charles.meshtalk.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.charles.meshtalk.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = ciVersionCode ?: 1
         versionName = ciVersionName ?: "0.1"
 
