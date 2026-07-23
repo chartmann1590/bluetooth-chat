@@ -173,7 +173,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
 
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
