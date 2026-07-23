@@ -194,7 +194,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     // Play flavor: Google Play Billing for the one-time purchase + subscription-with-trial.
-    "playImplementation"("com.android.billingclient:billing-ktx:7.1.1")
+    "playImplementation"("com.android.billingclient:billing-ktx:9.1.0")
     // Github flavor: opens the Cloudflare Worker's Stripe Checkout URL in a Custom Tab; the
     // Retrofit/OkHttp/kotlinx-serialization deps it needs for talking to the Worker are already
     // shared dependencies above (used by the feedback feature), so nothing extra needed there.

@@ -26,7 +26,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * Play Billing Library v7 implementation. Play itself is the source of truth for entitlement —
+ * Play Billing Library v9 implementation. Play itself is the source of truth for entitlement —
  * no external backend is needed for this flavor (unlike the github/Stripe flavor, which has
  * nothing else to ask). Product/subscription IDs below must be created manually in Play Console
  * (Monetize → Products) before purchases can be tested; see the walkie-talkie feature plan for
@@ -73,7 +73,7 @@ class PlayBillingRepository(private val appContext: Context) : BillingRepository
     }
 
     private suspend fun queryProductDetails() {
-        // Billing Library v7 requires every queryProductDetails() call to list products of a
+        // Billing Library requires every queryProductDetails() call to list products of a
         // single type only (mixing INAPP + SUBS in one call throws IllegalArgumentException) — so
         // the lifetime (INAPP) and subscription (SUBS) lookups have to be two separate queries.
         val inappParams = QueryProductDetailsParams.newBuilder()
