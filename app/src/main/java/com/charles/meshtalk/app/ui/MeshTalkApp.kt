@@ -39,6 +39,8 @@ import com.charles.meshtalk.app.billing.findActivity
 import com.charles.meshtalk.app.billing.isUnlocked
 import com.charles.meshtalk.app.notifications.VoiceNotifier
 import com.charles.meshtalk.app.repository.MeshRepository
+import com.google.android.play.core.review.ReviewManagerFactory
+import kotlinx.coroutines.tasks.await
 
 private const val ROUTE_PUBLIC = "public"
 private const val ROUTE_MESSAGES = "messages"
@@ -76,6 +78,20 @@ fun MeshTalkApp(
     }
     LaunchedEffect(adsEnabled) {
         if (adsEnabled) AdsManager.loadInterstitialIfNeeded(context, billingRepository)
+    }
+
+    LaunchedEffect(Unit) {
+        repository.reviewPromptReady.collect { ready ->
+            if (!ready) return@collect
+            context.findActivity()?.let { activity ->
+                runCatching {
+                    val manager = ReviewManagerFactory.create(activity)
+                    val reviewInfo = manager.requestReviewFlow().await()
+                    manager.launchReviewFlow(activity, reviewInfo).await()
+                }
+            }
+            repository.consumeReviewPromptReady()
+        }
     }
 
     LaunchedEffect(pendingDmPeerKey) {

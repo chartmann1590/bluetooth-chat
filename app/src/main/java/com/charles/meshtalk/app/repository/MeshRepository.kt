@@ -49,6 +49,26 @@ class MeshRepository private constructor(private val appContext: Context) {
     private val _dmTypers = MutableStateFlow<Map<String, TypingInfo>>(emptyMap())
     val dmTypers: StateFlow<Map<String, TypingInfo>> = _dmTypers.asStateFlow()
 
+    // Signals the UI to launch the official Play In-App Review dialog. Set true exactly once,
+    // after a handful of successfully sent messages — a real moment of the app working as
+    // intended, not just an app-open. The UI consumes it and calls consumeReviewPromptReady().
+    private val _reviewPromptReady = MutableStateFlow(false)
+    val reviewPromptReady: StateFlow<Boolean> = _reviewPromptReady.asStateFlow()
+
+    fun consumeReviewPromptReady() {
+        _reviewPromptReady.value = false
+    }
+
+    private fun recordSuccessfulSendForReviewPrompt() {
+        if (prefs.getBoolean(KEY_REVIEW_REQUESTED, false)) return
+        val count = prefs.getInt(KEY_REVIEW_MESSAGE_COUNT, 0) + 1
+        prefs.edit().putInt(KEY_REVIEW_MESSAGE_COUNT, count).apply()
+        if (count >= REVIEW_PROMPT_THRESHOLD) {
+            prefs.edit().putBoolean(KEY_REVIEW_REQUESTED, true).apply()
+            _reviewPromptReady.value = true
+        }
+    }
+
     init {
         scope.launch {
             while (true) {
@@ -303,6 +323,7 @@ class MeshRepository private constructor(private val appContext: Context) {
                 entityFor(id, "PUBLIC", myKey, myNick, null, content, System.currentTimeMillis(), isMine = true)
             )
         }
+        recordSuccessfulSendForReviewPrompt()
     }
 
     /** Returns false if the recipient hasn't been seen on the mesh yet (no known agreement key). */
@@ -329,6 +350,7 @@ class MeshRepository private constructor(private val appContext: Context) {
                 entityFor(id, "DM", myKey, myNick, recipientPubKeyHex, content, System.currentTimeMillis(), isMine = true)
             )
         }
+        recordSuccessfulSendForReviewPrompt()
         return true
     }
 
@@ -359,6 +381,7 @@ class MeshRepository private constructor(private val appContext: Context) {
                 entityFor(id, "DM", myKey, myNick, recipientPubKeyHex, content, System.currentTimeMillis(), isMine = true)
             )
         }
+        recordSuccessfulSendForReviewPrompt()
         return true
     }
 
@@ -531,6 +554,9 @@ class MeshRepository private constructor(private val appContext: Context) {
         private const val PREF_VOICE_RELAY = "voice_relay_enabled"
         private const val PREF_PUBLIC_VOICE_NOTIFICATIONS = "public_voice_notifications_enabled"
         private const val PREF_ANALYTICS_CRASHLYTICS_ENABLED = "analytics_crashlytics_enabled"
+        private const val KEY_REVIEW_MESSAGE_COUNT = "review_prompt_message_count"
+        private const val KEY_REVIEW_REQUESTED = "review_prompt_requested"
+        private const val REVIEW_PROMPT_THRESHOLD = 3
 
         // Retry tuning: check every 25s, only retry messages older than 20s (give the first send
         // a moment to succeed normally) and younger than 10 minutes, capped at 5 attempts each —

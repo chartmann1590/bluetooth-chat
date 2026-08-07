@@ -188,6 +188,7 @@ dependencies {
     // AdMob (banner + interstitial); shown only while the walkie-talkie entitlement is locked —
     // see AdsManager.kt.
     implementation("com.google.android.gms:play-services-ads:23.6.0")
+    implementation("com.google.android.play:review-ktx:2.0.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
