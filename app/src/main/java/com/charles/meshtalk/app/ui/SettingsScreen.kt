@@ -34,7 +34,7 @@ import com.charles.meshtalk.app.repository.MeshRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(repository: MeshRepository) {
+fun SettingsScreen(repository: MeshRepository, onOpenMoreApps: () -> Unit = {}) {
     val nickname by repository.myNickname.collectAsState()
     val pubKeyHex by repository.myPublicKeyHex.collectAsState()
     val receiveAttachments by repository.receiveAttachments.collectAsState()
@@ -198,6 +198,16 @@ fun SettingsScreen(repository: MeshRepository) {
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            TextButton(onClick = onOpenMoreApps) {
+                Text(
+                    "More apps from this developer",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             TextButton(
                 onClick = {

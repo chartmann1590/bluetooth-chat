@@ -48,6 +48,7 @@ private const val ROUTE_NEARBY = "nearby"
 private const val ROUTE_WALKIE_TALKIE = "walkie_talkie"
 private const val ROUTE_AI_CHAT = "ai_chat"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_MORE_APPS = "more_apps"
 private const val ROUTE_DM_THREAD = "dm/{peerKey}"
 private const val ROUTE_FIND = "find/{peerKey}"
 private const val ROUTE_FIND_ALL = "find_all"
@@ -180,7 +181,10 @@ fun MeshTalkApp(
             composable(ROUTE_FIND_ALL) { FindAllScreen(repository, onOpenPeer = { peerKey ->
                 navController.navigate("find/$peerKey")
             }) }
-            composable(ROUTE_SETTINGS) { SettingsScreen(repository) }
+            composable(ROUTE_SETTINGS) {
+                SettingsScreen(repository, onOpenMoreApps = { navController.navigate(ROUTE_MORE_APPS) })
+            }
+            composable(ROUTE_MORE_APPS) { MoreAppsScreen(onBack = { navController.popBackStack() }) }
             composable(ROUTE_DM_THREAD) { backStackEntry ->
                 val peerKey = backStackEntry.arguments?.getString("peerKey") ?: return@composable
                 DmThreadScreen(repository, peerKey)
