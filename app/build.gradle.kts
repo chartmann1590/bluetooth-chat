@@ -158,14 +158,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-service:2.8.6")
-    implementation("androidx.navigation:navigation-compose:2.8.2")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.core:core-ktx:1.19.1")
 
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")
 
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
 
     // GitHub feedback reporter dependencies
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
@@ -174,7 +174,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
-    implementation("io.coil-kt.coil3:coil-compose:3.0.4")
+    implementation("io.coil-kt.coil3:coil-compose:3.6.3")
 
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
@@ -199,7 +199,7 @@ dependencies {
     // Github flavor: opens the Cloudflare Worker's Stripe Checkout URL in a Custom Tab; the
     // Retrofit/OkHttp/kotlinx-serialization deps it needs for talking to the Worker are already
     // shared dependencies above (used by the feedback feature), so nothing extra needed there.
-    "githubImplementation"("androidx.browser:browser:1.8.0")
+    "githubImplementation"("androidx.browser:browser:1.10.0")
 }
 
 kotlin {
