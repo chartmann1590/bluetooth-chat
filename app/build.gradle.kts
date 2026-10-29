@@ -167,16 +167,16 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.86")
 
     // GitHub feedback reporter dependencies
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:5.5.0")
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.5.1")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
     implementation("io.coil-kt.coil3:coil-compose:3.6.3")
 
     // On-device Gemma 4 inference (fully offline once the model file is downloaded).
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.1")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
