@@ -104,6 +104,8 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }} (${{ github.sha }})
           generate_release_notes: true
+          # Branch builds (e.g. direct-stripe via workflow_dispatch) make a DRAFT release; only master publishes.
+          draft: ${{ github.ref != 'refs/heads/master' }}
           files: |
             ${{ steps.rename.outputs.apk_path }}
             ${{ steps.rename.outputs.aab_path }}
