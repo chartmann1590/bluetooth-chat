@@ -117,6 +117,12 @@ android {
             buildConfigField("String", "ENTITLEMENT_VERIFY_PUBLIC_KEY_HEX",
                 "\"${feedbackProp("entitlement.verify.public.key.hex") ?: ""}\"")
         }
+        create("amazon") {
+            dimension = "distribution"
+            // Amazon Appstore (Fire devices): Amazon In-App Purchasing instead of Play Billing or
+            // Stripe (Amazon policy: its own IAP for digital unlocks). Same package id as play —
+            // the two stores never share a device.
+        }
     }
 
     compileOptions {
@@ -199,6 +205,8 @@ dependencies {
     // Retrofit/OkHttp/kotlinx-serialization deps it needs for talking to the Worker are already
     // shared dependencies above (used by the feedback feature), so nothing extra needed there.
     "githubImplementation"("androidx.browser:browser:1.10.0")
+    // Amazon flavor: Amazon Appstore SDK (In-App Purchasing). A plain jar on Maven Central.
+    "amazonImplementation"("com.amazon.device:amazon-appstore-sdk:3.0.9")
 }
 
 kotlin {

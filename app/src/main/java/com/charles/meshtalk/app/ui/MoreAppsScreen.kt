@@ -60,6 +60,15 @@ val crossPromoApps: List<CrossPromoApp> = listOf(
 )
 
 private fun openPlayStoreListing(context: Context, packageName: String) {
+    if (com.charles.meshtalk.app.BuildConfig.FLAVOR == "amazon") {
+        // Amazon Appstore build: never link to Google Play (Amazon policy); open the Appstore listing.
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("amzn://apps/android?p=$packageName")))
+        } catch (e: ActivityNotFoundException) {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.amazon.com/gp/mas/dl/android?p=$packageName")))
+        }
+        return
+    }
     try {
         context.startActivity(
             Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {

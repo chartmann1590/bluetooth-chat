@@ -84,8 +84,8 @@ fun MeshTalkApp(
     LaunchedEffect(Unit) {
         repository.reviewPromptReady.collect { ready ->
             if (!ready) return@collect
-            // Direct-download (github) builds aren't installed from Google Play, so Play's review flow doesn't apply.
-            if (com.charles.meshtalk.app.BuildConfig.FLAVOR != "github") context.findActivity()?.let { activity ->
+            // Only Play installs get Play's review flow (github = direct download, amazon = Amazon Appstore).
+            if (com.charles.meshtalk.app.BuildConfig.FLAVOR == "play") context.findActivity()?.let { activity ->
                 runCatching {
                     val manager = ReviewManagerFactory.create(activity)
                     val reviewInfo = manager.requestReviewFlow().await()

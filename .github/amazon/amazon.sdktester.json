@@ -1,0 +1,17 @@
+{
+  "walkietalkie_lifetime": {
+    "itemType": "ENTITLED",
+    "price": 9.99,
+    "title": "MeshTalk Walkie-Talkie (Lifetime)",
+    "description": "Unlock push-to-talk forever"
+  },
+  "walkietalkie_monthly_1m": {
+    "itemType": "SUBSCRIPTION",
+    "price": 2.99,
+    "title": "MeshTalk Walkie-Talkie (Monthly)",
+    "description": "Push-to-talk, monthly",
+    "subscriptionParent": "walkietalkie_monthly",
+    "term": "Monthly",
+    "freeTrialPeriod": "Weekly"
+  }
+}

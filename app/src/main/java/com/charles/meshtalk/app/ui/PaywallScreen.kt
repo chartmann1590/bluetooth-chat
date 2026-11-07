@@ -40,7 +40,8 @@ fun PaywallScreen(billing: BillingRepository) {
         Text(
             "Push-to-talk voice messages over the same offline Bluetooth mesh as chat — " +
                 "no internet needed, ever. Unlock with a one-time purchase or a monthly " +
-                "subscription (3-day free trial included).",
+                (if (com.charles.meshtalk.app.BuildConfig.FLAVOR == "amazon") "subscription (free trial included)."
+                else "subscription (3-day free trial included)."),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -62,7 +63,7 @@ fun PaywallScreen(billing: BillingRepository) {
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Start monthly subscription (3-day free trial)")
+            Text(if (com.charles.meshtalk.app.BuildConfig.FLAVOR == "amazon") "Start monthly subscription (free trial)" else "Start monthly subscription (3-day free trial)")
         }
     }
 }
