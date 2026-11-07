@@ -21,6 +21,9 @@ tap (?i)^skip for now$
 wait 4
 adclose
 shot 03-main
+sh su 0 sh -c 'for f in /data/anr/anr_*; do head -c 2000 $f; echo; grep -A40 "\"main\"" $f | head -60; done' | tee -a /tmp/amz-out/anr.txt
+tap (?i)^wait$
+wait 10
 tap (?i)^talk$
 wait 6
 shot 04-talk
