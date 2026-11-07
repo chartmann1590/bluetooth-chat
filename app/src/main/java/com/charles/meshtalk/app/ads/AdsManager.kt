@@ -27,14 +27,28 @@ object AdsManager {
     @Volatile private var interstitialLoading = false
     @Volatile private var lastInterstitialShownAt = 0L
 
+    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** True once the Mobile Ads SDK finished initializing; banners and interstitials wait for it. */
+    val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
+
     fun init(context: Context) {
         if (initialized) return
         initialized = true
-        MobileAds.initialize(context.applicationContext) {}
+        val app = context.applicationContext
+        // Initialize off the main thread. On devices without Google Play services (Fire tablets)
+        // the SDK's first initialize() can hold its lock for a long time, which froze the UI (ANR).
+        Thread({
+            try {
+                MobileAds.initialize(app) { _ready.value = true }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Mobile Ads init failed", t)
+            }
+        }, "ads-init").start()
     }
 
     fun loadInterstitialIfNeeded(context: Context, billing: BillingRepository) {
         if (billing.isFeatureUnlocked()) return
+        if (!_ready.value) return
         if (interstitialAd != null || interstitialLoading) return
         interstitialLoading = true
         InterstitialAd.load(

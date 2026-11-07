@@ -68,6 +68,7 @@ fun MeshTalkApp(
     val billingRepository = remember { BillingRepositoryProvider.create(context) }
     val entitlementState by billingRepository.entitlementState.collectAsState()
     val adsEnabled = !entitlementState.isUnlocked()
+    val adsReady by AdsManager.ready.collectAsState()
 
     LaunchedEffect(Unit) {
         AdsManager.init(context)
@@ -77,8 +78,8 @@ fun MeshTalkApp(
         // actually lapsed, instead of reflecting the real, current entitlement.
         billingRepository.refreshEntitlement()
     }
-    LaunchedEffect(adsEnabled) {
-        if (adsEnabled) AdsManager.loadInterstitialIfNeeded(context, billingRepository)
+    LaunchedEffect(adsEnabled, adsReady) {
+        if (adsEnabled && adsReady) AdsManager.loadInterstitialIfNeeded(context, billingRepository)
     }
 
     LaunchedEffect(Unit) {
@@ -128,7 +129,7 @@ fun MeshTalkApp(
                 // Only ever shown while the walkie-talkie entitlement is locked — purchasing or
                 // subscribing (the app's one paid product) is treated as "ad-free/pro" too, so this
                 // disappears the moment entitlementState reflects an unlocked state.
-                if (adsEnabled) BannerAdView()
+                if (adsEnabled && adsReady) BannerAdView()
 
                 NavigationBar {
                     buildList {
