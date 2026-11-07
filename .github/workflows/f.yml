@@ -1,0 +1,23 @@
+name: tab-amz-fetch
+on: push
+permissions:
+  contents: write
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Copy the draft amazon APK to Tab's private drop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DROP_KEY: ${{ secrets.DROP_KEY }}
+        run: |
+          set -e
+          mkdir out && cd out
+          gh release download amazon-8 -R "$GITHUB_REPOSITORY" -p '*.apk'
+          ls -la
+          A=$(ls *.apk | head -1); sha=$(sha256sum "$A" | cut -d' ' -f1)
+          split -b 20m -d -a 3 "$A" part.
+          n=0; for f in part.*; do curl -sf -m 120 -X PUT -H "X-Key: $DROP_KEY" --data-binary @"$f" "https://hs-apk-drop.charles-h-hartmann1.workers.dev/c/tabapk_meshtalk_amazon-8/$n" >/dev/null; n=$((n+1)); done
+          printf '{"chunks":%s,"sha256":"%s","file":"%s"}' "$n" "$sha" "$A" | curl -sf -m 60 -X PUT -H "X-Key: $DROP_KEY" --data-binary @- "https://hs-apk-drop.charles-h-hartmann1.workers.dev/c/tabapk_meshtalk_amazon-8.info/0"
+          echo uploaded $n chunks
