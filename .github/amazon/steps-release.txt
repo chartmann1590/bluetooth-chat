@@ -1,6 +1,13 @@
 launch
 wait 12
 shot 01-launch
+tap (?i)choose a nickname
+type Tester
+sh input keyevent 111
+tap (?i)^get started$
+wait 4
+swipeup
+swipeup
 taploop (?i)^(next|continue|get started|skip|allow|ok|accept|agree|got it|start|i agree|not now|later|maybe later|no thanks|done)$
 wait 3
 shot 02-main
