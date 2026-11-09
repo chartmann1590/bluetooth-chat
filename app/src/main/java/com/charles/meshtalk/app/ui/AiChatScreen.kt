@@ -284,6 +284,21 @@ fun AiChatScreen() {
 
 @Composable
 private fun DownloadPrompt(onDownload: () -> Unit) {
+    if (!com.charles.meshtalk.app.ai.GemmaEngineManager.isSupportedDevice) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("On-device AI isn't available on this device", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "The Gemma 4 model needs a 64-bit device. Everything else in MeshTalk works here: " +
+                    "public and direct chat, photos, files and location over Bluetooth.",
+                modifier = Modifier.padding(top = 12.dp)
+            )
+        }
+        return
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,

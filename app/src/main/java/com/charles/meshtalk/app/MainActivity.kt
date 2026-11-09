@@ -204,6 +204,11 @@ private fun PermissionGate(onRequest: () -> Unit) {
 
 @Composable
 private fun AiDownloadPromptScreen(onDownload: () -> Unit, onSkip: () -> Unit) {
+    if (!com.charles.meshtalk.app.ai.GemmaEngineManager.isSupportedDevice) {
+        // 32-bit device: no on-device AI offer; continue onboarding.
+        androidx.compose.runtime.LaunchedEffect(Unit) { onSkip() }
+        return
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,

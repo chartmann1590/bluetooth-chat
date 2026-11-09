@@ -35,6 +35,11 @@ sealed class ModelState {
  * and the engine has been initialized — no mesh, no network, just local inference.
  */
 object GemmaEngineManager {
+    /** LiteRT-LM ships native code for arm64-v8a and x86_64 only. 32-bit devices (most Fire
+     * tablets run a 32-bit userspace) would crash loading it, so the AI feature is hidden there. */
+    val isSupportedDevice: Boolean =
+        android.os.Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" || it == "x86_64" }
+
     // Generic (non-hardware-specific) build so it runs on any arm64/x86_64 device, not just one
     // particular chipset's optimized variant.
     private const val MODEL_FILENAME = "gemma-4-E2B-it.litertlm"
@@ -53,6 +58,7 @@ object GemmaEngineManager {
     /** Starts the download in the background if it hasn't already started or finished; safe to
      * call more than once (e.g. if onboarding re-runs). Progress is still observable via [state]. */
     fun downloadInBackground(context: Context) {
+        if (!isSupportedDevice) return
         if (_state.value is ModelState.Downloading || modelFile(context).exists()) return
         managerScope.launch { downloadModel(context) }
     }
@@ -109,6 +115,7 @@ object GemmaEngineManager {
     }
 
     suspend fun initializeIfNeeded(context: Context): Boolean {
+        if (!isSupportedDevice) return false
         if (conversation != null) {
             _state.value = ModelState.Ready
             return true
