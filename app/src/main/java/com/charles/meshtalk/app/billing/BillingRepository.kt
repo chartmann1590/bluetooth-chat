@@ -46,5 +46,14 @@ interface BillingRepository {
      * its own PurchasesUpdatedListener and never needs an external deep-link callback. */
     suspend fun onExternalCheckoutReturned() {}
 
+    /** Github/Stripe flavor: the shared billing service's return link carries the Checkout session id. */
+    suspend fun onCheckoutReturned(sessionId: String?) = onExternalCheckoutReturned()
+
+    /** Whether the paywall shows a "Restore purchase" button (github/Stripe flavor: restore by email). */
+    val supportsRestore: Boolean get() = false
+
+    /** Restores earlier purchases (after a reinstall or on a new phone). */
+    suspend fun restorePurchases(activity: Activity) = refreshEntitlement()
+
     fun isFeatureUnlocked(): Boolean = entitlementState.value.isUnlocked()
 }

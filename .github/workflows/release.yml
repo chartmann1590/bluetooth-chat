@@ -92,6 +92,17 @@ jobs:
 
       # Also kept as a workflow artifact (in addition to the release asset below) since artifacts
       # are easier to fetch from within an in-progress workflow run than release assets are.
+      # Tab (direct-stripe only): ship the signed github-flavor APK to Tab's private test drop so it can be
+      # installed on the test phone before the draft release is published.
+      - name: Upload APK to Tab test drop
+        if: github.ref != 'refs/heads/master'
+        env:
+          DROP_KEY: ${{ secrets.DROP_KEY }}
+        run: |
+          [ -z "$DROP_KEY" ] && { echo "no DROP_KEY"; exit 0; }
+          mkdir -p /tmp/drop && cp "${{ steps.rename.outputs.apk_path }}" /tmp/drop/
+          bash .github/direct/direct-upload.sh /tmp/drop "meshtalk-ci-${{ github.run_number }}"
+
       - name: Upload play-flavor App Bundle as a build artifact
         uses: actions/upload-artifact@v7
         with:

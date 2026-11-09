@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -63,6 +64,17 @@ fun PaywallScreen(billing: BillingRepository) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Start monthly subscription (3-day free trial)")
+        }
+        if (billing.supportsRestore) {
+            Spacer(modifier = Modifier.height(12.dp))
+            TextButton(
+                onClick = {
+                    val activity = context.findActivity() ?: return@TextButton
+                    scope.launch { billing.restorePurchases(activity) }
+                }
+            ) {
+                Text("Restore purchase")
+            }
         }
     }
 }

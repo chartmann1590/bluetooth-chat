@@ -13,6 +13,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="meshtalk" android:host="billing" />
+                <data android:scheme="meshtalk" android:host="billing-return" />
             </intent-filter>
         </activity>
     </application>

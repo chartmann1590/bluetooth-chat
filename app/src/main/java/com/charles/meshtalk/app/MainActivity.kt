@@ -173,9 +173,10 @@ class MainActivity : ComponentActivity() {
      * flavor's manifest overlay, so this is unreachable on the play flavor). */
     private fun handleBillingDeepLink(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme != "meshtalk" || uri.host != "billing") return
+        if (uri.scheme != "meshtalk" || (uri.host != "billing" && uri.host != "billing-return")) return
         val billing = com.charles.meshtalk.app.billing.BillingRepositoryProvider.create(applicationContext)
-        lifecycleScope.launch { billing.onExternalCheckoutReturned() }
+        val sessionId = uri.getQueryParameter("session_id")
+        lifecycleScope.launch { billing.onCheckoutReturned(sessionId) }
     }
 
     override fun onStart() {
