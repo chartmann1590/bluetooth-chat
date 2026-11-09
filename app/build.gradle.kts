@@ -102,9 +102,11 @@ android {
     productFlavors {
         create("play") {
             dimension = "distribution"
+            buildConfigField("boolean", "IAP_ENABLED", "true")
         }
         create("github") {
             dimension = "distribution"
+            buildConfigField("boolean", "IAP_ENABLED", "true")
             // Lets both flavors install side-by-side on the same test device — this channel is
             // never uploaded to Play, so the differing package id has no downside.
             applicationIdSuffix = ".github"
@@ -119,6 +121,11 @@ android {
         }
         create("amazon") {
             dimension = "distribution"
+            // Amazon IAP stays off until the Amazon account's non-US tax details are filled in
+            // (Amazon refuses to publish paid items before that: VENDOR_NO_ROYALTY_TAX_INFO_NON_US).
+            // Off = the paid walkie-talkie tab is hidden, so no purchase button can fail on Fire.
+            // Flip to true (and submit the IAP items) to turn it back on. (Tab, Nov 9 2026)
+            buildConfigField("boolean", "IAP_ENABLED", "false")
             // Amazon Appstore (Fire devices): Amazon In-App Purchasing instead of Play Billing or
             // Stripe (Amazon policy: its own IAP for digital unlocks). Same package id as play —
             // the two stores never share a device.

@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -109,7 +110,9 @@ fun MeshTalkApp(
     // read for its initial target once navigation actually completes.
     var walkieTalkieInitialTarget by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(pendingWalkieTalkieTarget) {
-        if (pendingWalkieTalkieTarget != null) {
+        if (pendingWalkieTalkieTarget != null && !com.charles.meshtalk.app.BuildConfig.IAP_ENABLED) {
+            onWalkieTalkieDeepLinkConsumed()
+        } else if (pendingWalkieTalkieTarget != null) {
             walkieTalkieInitialTarget = pendingWalkieTalkieTarget
             navController.navigate(ROUTE_WALKIE_TALKIE) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -136,7 +139,8 @@ fun MeshTalkApp(
                         add(Triple(ROUTE_PUBLIC, "Public", Icons.Filled.Public))
                         add(Triple(ROUTE_MESSAGES, "Messages", Icons.Filled.Forum))
                         add(Triple(ROUTE_NEARBY, "Nearby", Icons.Filled.People))
-                        add(Triple(ROUTE_WALKIE_TALKIE, "Talk", Icons.Filled.Mic))
+                        // Amazon build without IAP: the paid walkie-talkie tab is hidden.
+                        if (com.charles.meshtalk.app.BuildConfig.IAP_ENABLED) add(Triple(ROUTE_WALKIE_TALKIE, "Talk", Icons.Filled.Mic))
                         if (findFeatureEnabled) add(Triple(ROUTE_FIND_ALL, "Find", Icons.Filled.Explore))
                         add(Triple(ROUTE_AI_CHAT, "AI", Icons.Filled.Psychology))
                         add(Triple(ROUTE_SETTINGS, "Settings", Icons.Filled.Settings))
@@ -177,7 +181,11 @@ fun MeshTalkApp(
             ) }
             composable(ROUTE_WALKIE_TALKIE) {
                 val initialPeerKeyHex = walkieTalkieInitialTarget?.takeIf { it != VoiceNotifier.TARGET_PUBLIC }
-                EntitlementGate(billingRepository) { WalkieTalkieScreen(repository, initialPeerKeyHex) }
+                if (com.charles.meshtalk.app.BuildConfig.IAP_ENABLED) {
+                    EntitlementGate(billingRepository) { WalkieTalkieScreen(repository, initialPeerKeyHex) }
+                } else {
+                    Text("Walkie-talkie isn't available in this version.", modifier = Modifier.padding(24.dp))
+                }
             }
             composable(ROUTE_AI_CHAT) { AiChatScreen() }
             composable(ROUTE_FIND_ALL) { FindAllScreen(repository, onOpenPeer = { peerKey ->

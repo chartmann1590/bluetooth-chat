@@ -13,9 +13,24 @@ tap (?i)^skip for now$
 wait 4
 wait 3
 shot 02-main
-tap (?i)talk
-wait 6
-shot 03-talk
+tap (?i)^messages$
+wait 4
+shot 03-messages
+tap (?i)^nearby$
+wait 4
+shot 03b-nearby
+tap (?i)^ai$
+wait 4
+shot 03c-ai
+tap (?i)^settings$
+wait 4
+shot 03d-settings
+swipeup
+swipeup
+shot 03e-settings-end
+tap (?i)^talk$
+wait 4
+shot 03f-no-talk-tab
 back
 shot 04-back
 stop

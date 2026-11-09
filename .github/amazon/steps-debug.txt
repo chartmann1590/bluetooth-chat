@@ -24,21 +24,20 @@ shot 03-main
 sh su 0 sh -c 'for f in /data/anr/anr_*; do head -c 2000 $f; echo; grep -A40 "\"main\"" $f | head -60; done' | tee -a /tmp/amz-out/anr.txt
 tap (?i)^wait$
 wait 10
+tap (?i)^messages$
+wait 4
+shot 04-messages
+tap (?i)^ai$
+wait 4
+shot 05-ai
+tap (?i)^settings$
+wait 4
+swipeup
+swipeup
+shot 06-settings-end
 tap (?i)^talk$
-wait 6
-shot 04-talk
-back
-tap (?i)talk
-wait 6
-shot 05-paywall
-scrollto (?i)buy once
-wait 8
-shot 06-iap-lifetime
-back
-wait 2
-scrollto (?i)monthly subscription
-wait 8
-shot 07-iap-subscription
+wait 4
+shot 07-no-talk-tab
 back
 wait 2
 shot 08-after
