@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit
  * offline-first nature. `deviceId` is a random UUID generated on first use.
  *
  * 2026-11 (Hartmann Studios shared billing): new purchases go through the shared Stripe billing
- * service (`/v2/*`, app key `meshtalk`) and are tied to the buyer's email, so "Restore purchase"
+ * service (the /v2 routes, app key `meshtalk`) and are tied to the buyer's email, so "Restore purchase"
  * brings them back after a reinstall or on a new phone (the server checks Stripe's records for that
  * email; an unknown email gets nothing). Purchases made earlier through the device-id Worker are
  * still honoured on the phone that made them.
