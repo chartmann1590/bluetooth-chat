@@ -114,10 +114,12 @@ class StripeBillingRepository(private val appContext: Context) : BillingReposito
     override suspend fun restorePurchases(activity: Activity) {
         val email = askEmail(activity, "Restore purchase", "Enter the email you used at checkout.") ?: return
         val ok = v2Fetch(JSONObject().put("app", V2_APP).put("email", email))
+        val limited = !ok && lastV2Code == 429
         val owned = v2Entitlements().isNotEmpty()
         withContext(Dispatchers.Main) {
             Toast.makeText(activity,
-                if (!ok) "Couldn't reach the license server. Try again."
+                if (limited) "Too many restore attempts — try again later."
+                else if (!ok) "Couldn't reach the license server. Try again."
                 else if (owned) "Purchases restored. Thank you!" else "No purchases found for $email.",
                 Toast.LENGTH_LONG).show()
         }
@@ -159,11 +161,16 @@ class StripeBillingRepository(private val appContext: Context) : BillingReposito
         }
     }
 
+    /** HTTP status of the last v2 entitlement call (0 = no answer). 429 = the server's per-email lookup limit. */
+    @Volatile private var lastV2Code = 0
+
     /** Asks the shared billing service; true when it answered (entitled or not). */
     private suspend fun v2Fetch(req: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        lastV2Code = 0
         try {
             val response = client.newCall(Request.Builder().url("$V2_BASE/v2/entitlement")
                 .post(req.toString().toRequestBody("application/json".toMediaType())).build()).execute()
+            lastV2Code = response.code
             val json = JSONObject(response.body?.string().orEmpty())
             if (!json.has("entitlements")) { Log.w(TAG, "entitlement: ${json.optString("error")}"); return@withContext false }
             val ents = json.optJSONArray("entitlements") ?: JSONArray()
