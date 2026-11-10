@@ -150,7 +150,9 @@ fun MeshTalkApp(
                                     launchSingleTop = true
                                     restoreState = true
                                 }
-                                if (adsEnabled) {
+                                // Never put a full-screen ad in front of the Talk tab: while walkie-talkie is
+                                // locked that tab opens the paywall, and the purchase screen must show straight away.
+                                if (adsEnabled && route != ROUTE_WALKIE_TALKIE) {
                                     context.findActivity()?.let { AdsManager.maybeShowInterstitial(it, billingRepository) }
                                 }
                             }
