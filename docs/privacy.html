@@ -46,74 +46,34 @@
 <body>
 <div class="wrap">
   <h1>Privacy Policy</h1>
-  <p class="updated">MeshTalk for Android · Last updated 2026-07-07</p>
+  <p class="updated">MeshTalk for Android · Hartmann Studios</p>
+    <p><strong>Version notice:</strong> The descriptions of changed features below apply to MeshTalk for Google Play version 1.0.20261121.0939 and later versions with those features, when available. If you are still using an earlier release, these changes do not install or enable new features on your device. <a href="https://github.com/chartmann1590/bluetooth-chat/blob/bc8b9d36a807f42d524ef4fb2219c16a530c8327/docs/privacy.html">Read the policy previously shown for earlier releases.</a> The direct-download edition may differ as noted below.</p>
+  <div class="card"><strong>At a glance:</strong> MeshTalk sends chat, attachments and walkie-talkie audio over Bluetooth. Public posts are readable by other mesh participants; direct messages are encrypted for the intended recipient. Internet features such as private reports, maps, Play Billing, ads, optional diagnostics, model downloads and public feedback have separate data paths.</div>
 
-  <div class="card">
-    <strong>Short version:</strong> MeshTalk has no servers, no accounts, and everything it stores lives only on your device. The only place your messages travel is directly, over Bluetooth, to other nearby phones running MeshTalk. The app uses Firebase (operated by Google) for anonymised crash reporting, usage analytics, and performance monitoring — you can disable all of this in Settings &gt; "Usage &amp; crash reporting" at any time.
-  </div>
+  <h2>On your device and over the mesh</h2>
+  <p>Your nickname, mesh identity keypair, peers, saved messages and attachments, block list and settings are kept in app storage. The keys used to sign and encrypt traffic stay in app storage; your public signing and agreement keys and nickname are announced to peers. Android backup is enabled. Your OS backup or transfer settings may copy eligible app data; consult your device’s backup settings.</p>
+  <p>If you send public text, images, files, location or voice, people on the mesh can see or hear it, and might retain, relay or copy it. Direct content is encrypted from the sender to the intended recipient; packets can be relayed and some routing metadata (such as public keys) is visible to relays. This description is about direct mesh content, not every data path in MeshTalk. MeshTalk does not provide centrally hosted chat history. Blocking on your device hides the peer on that device; it cannot erase content on another person’s device.</p>
+  <p>Nearby-device and Bluetooth permissions support mesh connections. Some older Android releases require location permission for discovery. Optional location sharing puts your selected coordinates in the message. In the Play edition, you can choose whether to load a Bluetooth Radar backdrop and whether to attach a map when sharing your location. If you choose a map and the tiles are not cached, the OpenStreetMap tile service receives HTTPS requests corresponding to the area (which can disclose a small area) and ordinary network information; sharing coordinates without a map does not request tiles. The direct edition may fetch the map automatically when you use those features. Voice recording uses the microphone when you record; chat may also use media you pick. Notifications, including direct and optional public voice alerts, can be controlled through device or app settings.</p>
 
-  <h2>What MeshTalk stores on your device</h2>
-  <ul>
-    <li><strong>Your identity keypair</strong> — generated on first launch, stored in the app's private storage. Never leaves your device except as a public key, which other MeshTalk users see when you're nearby.</li>
-    <li><strong>Your nickname</strong> — chosen during onboarding, shared with nearby peers so they know who's talking.</li>
-    <li><strong>Contacts</strong> — the public keys and nicknames of other MeshTalk users your phone has seen nearby, plus when you last saw them.</li>
-    <li><strong>Messages</strong> — public feed posts and direct messages you've sent or received, including any photos/files attached, stored locally in the app's database.</li>
-  </ul>
-  <p>None of this is uploaded anywhere. There is no MeshTalk server. Uninstalling the app removes all of it.</p>
+  <h2>Private reporting and app review (Google Play edition)</h2>
+  <p>When the private reporting service is available and you choose to submit a report, Hartmann Studios’ moderation service receives its category and reason, the relevant message or output reference and peer’s public key when applicable, your optional note, and the text excerpt only if you explicitly include it. It does not attach the conversation, voice recording, image or file, or publish the report in chat. The report uses HTTPS. Network information is used for abuse protection; the source address is not written into the moderation inbox. Reports and any recorded disposition are accessible only to authorized moderators. The reporting app can still block peers offline, but report delivery requires internet. Resolved reports are eligible for removal 90 days after the case closes; unresolved reports can be kept for review.</p>
+  <p>A separate sign-in is provided only to Google Play’s assigned app reviewers when reviewer access is enabled. The app sends their demo credentials and a fresh session request over HTTPS to validate a limited, temporary preview. Review audio is recorded and played back on that device, not sent to the mesh or the reviewer service. This is separate from Play purchases, app subscriptions and other users’ content.</p>
 
-  <h2>What gets sent over Bluetooth, and to whom</h2>
-  <p>MeshTalk talks directly to other phones running the app within Bluetooth range — no internet connection is used or required. Two kinds of messages exist:</p>
-  <ul>
-    <li><strong>Public messages</strong> are readable by anyone on the mesh, by design — that's the point of a public feed. They're cryptographically signed so recipients can verify who sent them, but not encrypted.</li>
-    <li><strong>Direct messages</strong> are end-to-end encrypted (X25519 + AES-GCM) so only the intended recipient can read the content. Other phones may still relay the encrypted bytes to help the message reach its destination, but can't decrypt them.</li>
-  </ul>
-  <p>Because this is a mesh network, your phone also relays other users' messages toward their destination — this is how range is extended beyond a single Bluetooth connection. Relaying only forwards already-encrypted or already-public bytes; your phone doesn't read the content of messages that aren't addressed to it.</p>
+  <h2>On-device AI</h2>
+  <p>The model is optional. Downloading it connects to its download host (Hugging Face), which receives ordinary connection information. The model runs locally. Prompts, selected images, AI answers and saved AI chats remain on the device unless you deliberately share them or include an excerpt in a private report. You can delete local AI conversations in the app. There is no guarantee that AI answers are accurate or appropriate; flag a concerning answer in the app.</p>
 
-  <h2>Attachments</h2>
-  <p>Photos and files you send are compressed/size-capped and transmitted the same way as text — public ones are visible to the mesh, DM ones are encrypted. You can turn off <em>receiving</em> attachments in Settings; when off, your device still relays other people's attachment data for the mesh, it just doesn't store or display it for you.</p>
+  <h2>Payments, advertising and optional diagnostics</h2>
+  <p>On Google Play, purchase and subscription options are shown and handled by Google Play Billing. MeshTalk reads product details and purchase status to provide and restore access. MeshTalk does not receive your payment card number. The separate direct-download edition may instead use the publisher’s payment service and Stripe to handle checkout and validate access; it does not restore Play ownership.</p>
+  <p>In the Google Play edition, Google User Messaging Platform handles advertising privacy choices, and Google AdMob can provide ads for users who select the adult band, are confirmed not to have paid access and have a current ads permission state. A missing choice or an uncertain purchase check does not enable ads. Google’s services may process identifiers (including advertising identifiers where available), IP-derived approximate location, ad interactions, diagnostics, and device/app information for purposes including ads, fraud prevention and measurement. Options depend on your region and settings. Use MeshTalk’s advertising privacy controls and <a href="https://policies.google.com/technologies/partner-sites">Google’s partner privacy information</a> to learn more.</p>
+  <p>In supporting builds, <strong>Settings → Usage &amp; crash reporting</strong> controls optional Firebase Analytics, Crashlytics and Performance Monitoring. These may handle interaction events, installation/device identifiers, crash details, and performance measurements, as well as app, OS and device information. The setting for a new installation of this Play update is off until enabled. Previously saved choices can remain. You can turn it off in Settings; this does not delete data previously sent.</p>
 
-  <h2>Permissions MeshTalk requests, and why</h2>
-  <ul>
-    <li><strong>Bluetooth (scan/advertise/connect)</strong> — required to find and talk to nearby phones; this is the entire mechanism of the app.</li>
-    <li><strong>Nearby devices / location (older Android versions)</strong> — Android requires this permission for Bluetooth LE scanning on some OS versions. MeshTalk does not use GPS or any other location source, and does not read or store your location.</li>
-    <li><strong>Notifications</strong> — used to alert you to new direct messages and to show the ongoing "mesh is running" status notification required for background operation.</li>
-    <li><strong>Battery optimization exemption (optional)</strong> — improves reliability of background message delivery; you can decline this and use the app normally.</li>
-  </ul>
+  <h2>Public issue feedback is separate</h2>
+  <p>If you post in the optional public GitHub issue tracker, your feedback text, any contact information you enter and any attachments you select may be visible to anyone. Voluntary diagnostics can include your app version, device/Android info, locale and time zone, and storage or memory totals. Do not put sensitive details there. For abuse, use private in-app reporting where available, or contact Hartmann Studios privately using the link below; do not post a private message in the public issue tracker.</p>
 
-  <h2>Third-party services</h2>
-  <p>MeshTalk uses <strong>Google Firebase</strong> to help the developer understand how the app is being used and to identify issues. Three Firebase services are integrated:</p>
-
-  <div class="card">
-    <h3 style="margin-top:0">Firebase Analytics</h3>
-    <p>Collects anonymised, aggregated data about how people use the app — for example, which screens are viewed, which features are most used, and the number of active users. No personally identifiable information (no names, no message content, no contact data, no Bluetooth identifiers) is collected. This data is processed by Google's servers and is subject to <a href="https://policies.google.com/privacy">Google's Privacy Policy</a>.</p>
-  </div>
-
-  <div class="card">
-    <h3>Firebase Crashlytics</h3>
-    <p>Collects crash reports when the app encounters a fatal error. Each report includes the stack trace (which line of code failed), the device model, Android version, and app version. No message content, cryptographic keys, contacts, or any user-generated data is included. Crash reports are processed by Google and help the developer fix bugs.</p>
-  </div>
-
-  <div class="card">
-    <h3>Firebase Performance Monitoring</h3>
-    <p>Collects anonymised performance data — app startup time, how long it takes to render screens, and similar technical metrics. This helps the developer keep the app fast. No user data or message content is collected.</p>
-  </div>
-
-  <h2>Opting out of Firebase data collection</h2>
-  <p>All three Firebase services can be turned off at any time from within the app: open <strong>Settings</strong> and toggle off <strong>"Usage &amp; crash reporting"</strong>. When disabled, no analytics events, crash reports, or performance metrics are sent to Google. This setting is immediate — no data is queued or sent after you turn it off. It is enabled by default so the developer can learn about issues early, but you have full control.</p>
-
-  <h2>Other third parties</h2>
-  <p>Aside from Firebase (as described above), MeshTalk does not integrate any advertising, analytics, or other third-party SDKs, and does not communicate with any server operated by the developer or anyone else.</p>
-
-  <h2>Children's privacy</h2>
-  <p>MeshTalk does not knowingly collect any information from anyone, of any age, since it doesn't collect information at all in the traditional sense — everything described above stays on-device or goes directly to other nearby users' devices.</p>
-
-  <h2>Changes to this policy</h2>
-  <p>If this policy changes, the updated version will be posted at this same address with a new "last updated" date.</p>
-
-  <h2>Contact</h2>
-  <p>Questions or concerns can be raised via <a href="https://github.com/chartmann1590/bluetooth-chat/issues">GitHub Issues</a> on the project repository.</p>
-
-  <a class="back" href="index.html">← Back to MeshTalk</a>
+  <h2>Age, control and questions</h2>
+  <p>The Google Play edition is intended for ages 16 and up. The advertising band is stored locally in the app. Declining to select the adult band does not prevent messaging or purchasing; ads remain off.</p>
+  <p>Many details are stored only on your device. Clearing its app data or removing the app will remove that installation’s local copy; backups, other people’s copies, publicly shared issues and prior service records are separate. Play manages subscriptions and Play purchase records. We cannot remove copies held by another device or restore local conversations from a central server.</p>
+  <p>For privacy questions or a request concerning data we hold, use the <a href="https://charleshartmann.com/contact/">Hartmann Studios contact page</a>. Include a private report reference if relevant, but never send a password, private key or unnecessary message content. This is not a promise that copies controlled by other people or services can be deleted by MeshTalk.</p>
 </div>
 </body>
 </html>
